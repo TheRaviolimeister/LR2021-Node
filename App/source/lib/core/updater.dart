@@ -12,7 +12,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../i18n.dart';
 
 /// Version dieser App (beim Bauen per --dart-define=APP_VERSION=… gesetzt).
-const appVersion = String.fromEnvironment('APP_VERSION', defaultValue: '1.6.5');
+const appVersion = String.fromEnvironment('APP_VERSION', defaultValue: '1.6.6');
 
 /// GitHub-Repository mit den Releases (beim Bauen per --dart-define=UPDATE_REPO=besitzer/name gesetzt).
 const updateRepo = String.fromEnvironment('UPDATE_REPO', defaultValue: 'TheRaviolimeister/LR2021-Node');

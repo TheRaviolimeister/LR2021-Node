@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.6.6
+
+- Maintenance release (no functional changes)
+
 ## 1.6.5
 
 - Android: app update is downloaded to the app's own storage instead of the cache folder (the system
