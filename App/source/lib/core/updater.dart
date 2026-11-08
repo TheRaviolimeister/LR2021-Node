@@ -12,7 +12,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../i18n.dart';
 
 /// Version dieser App (beim Bauen per --dart-define=APP_VERSION=… gesetzt).
-const appVersion = String.fromEnvironment('APP_VERSION', defaultValue: '1.6.3');
+const appVersion = String.fromEnvironment('APP_VERSION', defaultValue: '1.6.4');
 
 /// GitHub-Repository mit den Releases (beim Bauen per --dart-define=UPDATE_REPO=besitzer/name gesetzt).
 const updateRepo = String.fromEnvironment('UPDATE_REPO', defaultValue: 'TheRaviolimeister/LR2021-Node');
@@ -39,6 +39,7 @@ class Updater extends ChangeNotifier {
   double? progress;
   bool busy = false;
   DateTime? lastCheck;
+  String source = ''; // woher die letzte Versionsinfo kam
 
   static const rawBase = 'https://raw.githubusercontent.com/$updateRepo/dist';
   static const cdnBase = 'https://cdn.jsdelivr.net/gh/$updateRepo@dist';
@@ -121,10 +122,18 @@ class Updater extends ChangeNotifier {
     notifyListeners();
     final errors = <String>[];
     UpdateInfo? info;
-    for (final src in [() => _fromApi(), () => _fromManifest(rawBase), () => _fromManifest(cdnBase)]) {
+    final sources = <(String, Future<UpdateInfo?> Function())>[
+      ('GitHub', _fromApi),
+      (tr('Spiegel (raw.githubusercontent.com)'), () => _fromManifest(rawBase)),
+      (tr('Spiegel (jsDelivr)'), () => _fromManifest(cdnBase)),
+    ];
+    for (final (name, src) in sources) {
       try {
         info = await src();
-        if (info != null && info.version.isNotEmpty) break;
+        if (info != null && info.version.isNotEmpty) {
+          source = name;
+          break;
+        }
       } catch (e) {
         errors.add(e.toString().replaceFirst('Exception: ', '').split('\n').first);
       }
@@ -137,11 +146,11 @@ class Updater extends ChangeNotifier {
       lastCheck = DateTime.now();
       if (compare(info.version, appVersion) <= 0) {
         available = null;
-        status = tr('Die App ist aktuell ({0}).', [appVersion]);
+        status = tr('Die App ist aktuell ({0}).', [appVersion]) + tr(' Quelle: {0}', [source]);
         return null;
       }
       available = info;
-      status = tr('Version {0} ist verfügbar.', [info.version]);
+      status = tr('Version {0} ist verfügbar.', [info.version]) + tr(' Quelle: {0}', [source]);
       return info;
     } finally {
       busy = false;

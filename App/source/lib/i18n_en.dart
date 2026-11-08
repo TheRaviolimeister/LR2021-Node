@@ -708,4 +708,7 @@ const Map<String, String> enTexts = {
   'Download unvollständig': 'Download incomplete',
   'Prüfsumme stimmt nicht': 'Checksum does not match',
   'Download fehlgeschlagen': 'Download failed',
+  'Spiegel (raw.githubusercontent.com)': 'mirror (raw.githubusercontent.com)',
+  'Spiegel (jsDelivr)': 'mirror (jsDelivr)',
+  ' Quelle: {0}': ' Source: {0}',
 };

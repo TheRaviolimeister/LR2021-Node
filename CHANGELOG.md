@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.6.4
+
+- Settings → App update shows where the update information came from (GitHub or mirror)
+
 ## 1.6.3
 
 - Updates keep working when the GitHub API or the release downloads are disturbed: every release is
