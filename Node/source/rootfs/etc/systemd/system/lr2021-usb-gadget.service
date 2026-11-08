@@ -1,0 +1,13 @@
+[Unit]
+Description=LR2021 USB-Gadget (Netzwerk + Konsole über USB-C)
+After=systemd-modules-load.service lr2021-firstboot.service sys-kernel-config.mount
+Wants=sys-kernel-config.mount
+Before=NetworkManager.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/lr2021-usb-gadget
+
+[Install]
+WantedBy=multi-user.target

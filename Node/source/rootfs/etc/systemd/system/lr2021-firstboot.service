@@ -1,0 +1,14 @@
+[Unit]
+Description=LR2021 Ersteinrichtung (einmalig)
+ConditionPathExists=!/etc/lr2021/.eingerichtet
+After=local-fs.target
+Before=lr2021d.service lr2021-usb-gadget.service NetworkManager.service avahi-daemon.service bluetooth.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/lr2021-firstboot
+StandardOutput=journal+console
+
+[Install]
+WantedBy=multi-user.target

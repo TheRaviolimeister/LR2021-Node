@@ -1,0 +1,17 @@
+/*
+ * LR2021: Temperatursensor (THS) des H618 abschalten.
+ * Der Armbian-Kernel 6.18.60 (trunk) liest auf dem Orange Pi Zero 2W Unsinn (150-260 °C bei kaltem Board)
+ * und löst damit sofort nach dem Start eine Notabschaltung aus. Ohne Sensor gibt es keine Thermal-Zonen,
+ * also weder falsche Abschaltung noch Dauer-Drosselung. Entfernen, sobald ein Kernel richtig misst.
+ */
+/dts-v1/;
+/plugin/;
+/ {
+	compatible = "allwinner,sun50i-h616";
+	fragment@0 {
+		target-path = "/soc/thermal-sensor@5070400";
+		__overlay__ {
+			status = "disabled";
+		};
+	};
+};

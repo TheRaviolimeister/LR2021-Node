@@ -1,0 +1,35 @@
+#!/bin/bash
+# LR2021 Node – einmalige Einrichtung beim ersten Start (offline).
+# Läuft VOR NetworkManager/Avahi/USB-Gadget/lr2021d. Kein Neustart nötig
+# (ein Neustart hier würde Armbians Partitions-Vergrößerung abbrechen können).
+set -u
+LOG=/var/log/lr2021-firstboot.log; exec >>"$LOG" 2>&1; echo "== $(date) firstboot"
+mkdir -p /etc/lr2021 /var/lib/lr2021
+# Node-ID aus CPU-Seriennummer (sonst MAC) – lr2021d liest dieselbe Datei
+if ! grep -qE '^[0-9A-F]{4}$' /etc/lr2021/node-id 2>/dev/null; then
+  src=$(tr -d '\0' </sys/firmware/devicetree/base/serial-number 2>/dev/null)
+  [ -n "$src" ] || src=$(cat /sys/class/net/wlan0/address 2>/dev/null)
+  [ -n "$src" ] || src=$(cat /etc/machine-id 2>/dev/null)
+  [ -n "$src" ] || src=$(date +%s%N)
+  echo -n "$src" | sha1sum | cut -c1-4 | tr a-f A-F >/etc/lr2021/node-id
+fi
+ID=$(cat /etc/lr2021/node-id); HN="lr2021-$(echo "$ID" | tr A-F a-f)"
+echo "Kennung $ID, Hostname $HN"
+echo "$HN" >/etc/hostname
+hostname "$HN" 2>/dev/null || true
+sed -i "/127.0.1.1/d" /etc/hosts; echo "127.0.1.1 $HN" >>/etc/hosts
+# Hotspot: lr2021-hotspot.service erzeugt seine Konfiguration selbst (SSID LR2021-<Kennung>)
+# Offline-Pakete (falls im Image nicht schon per chroot installiert)
+if ls /opt/lr2021/debs/*.deb >/dev/null 2>&1; then dpkg -i /opt/lr2021/debs/*.deb || dpkg --configure -a; fi
+# Benutzer (im Image schon angelegt – nur zur Sicherheit)
+if ! id lr2021 >/dev/null 2>&1; then
+  useradd -m -s /bin/bash -G sudo,dialout,netdev,bluetooth,plugdev lr2021
+  echo "lr2021:lr2021node" | chpasswd
+fi
+rm -f /root/.not_logged_in_yet
+# Armbians root-Autologin (sonst erst vom Erstlogin-Assistenten entfernt) – wäre auch auf dem USB-COM-Port aktiv
+rm -f /etc/systemd/system/serial-getty@.service.d/override.conf /etc/systemd/system/getty@.service.d/override.conf
+systemctl daemon-reload 2>/dev/null || true
+touch /etc/lr2021/.eingerichtet
+sync
+echo "== fertig"

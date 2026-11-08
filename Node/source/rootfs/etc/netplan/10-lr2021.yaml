@@ -1,0 +1,4 @@
+# LR2021 Node: alles über NetworkManager (Profile in /etc/NetworkManager/system-connections)
+network:
+  version: 2
+  renderer: NetworkManager

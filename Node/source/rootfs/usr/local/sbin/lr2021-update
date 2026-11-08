@@ -1,0 +1,21 @@
+#!/bin/sh
+# LR2021 Node – Update ohne Netz/Weboberfläche (z. B. per SSH/SCP über USB):
+#   scp lr2021-update-….tar.gz lr2021@192.168.7.1:
+#   ssh lr2021@192.168.7.1 sudo lr2021-update lr2021-update-….tar.gz
+#   sudo lr2021-update --rollback      (zur vorherigen Version zurück)
+set -e
+if [ "$(id -u)" != 0 ]; then exec sudo "$0" "$@"; fi
+case "${1:-}" in
+  ""|-h|--help)
+    echo "Aufruf: lr2021-update PAKET.tar.gz | --rollback"; exit 1 ;;
+  --rollback)
+    # bewusst ohne Python – funktioniert auch, wenn die neue Version kaputt ist
+    A=/opt/lr2021; B=/opt/lr2021.alt
+    [ -f "$B/lr2021d.py" ] || { echo "FEHLER: keine gesicherte Version in $B"; exit 2; }
+    rm -rf "$A.tausch"; mv "$A" "$A.tausch"; mv "$B" "$A"; mv "$A.tausch" "$B"
+    echo "Version getauscht: $A <-> $B"
+    systemctl restart lr2021d && echo "Dienst lr2021d neu gestartet"
+    exit 0 ;;
+esac
+[ -f "$1" ] || { echo "FEHLER: Datei $1 nicht gefunden"; exit 2; }
+exec /usr/bin/python3 /opt/lr2021/lr2021d.py --update "$1"

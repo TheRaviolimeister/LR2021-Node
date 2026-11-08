@@ -1,0 +1,8 @@
+<?xml version="1.0" standalone='no'?>
+<!DOCTYPE service-group SYSTEM "avahi-service.dtd">
+<service-group>
+  <name replace-wildcards="yes">LR2021 Node %h</name>
+  <service><type>_http._tcp</type><port>80</port></service>
+  <service><type>_lr2021._tcp</type><port>2021</port><txt-record>a=2021</txt-record><txt-record>b=2022</txt-record><txt-record>gps=2023</txt-record></service>
+  <service><type>_ssh._tcp</type><port>22</port></service>
+</service-group>

@@ -1,0 +1,13 @@
+[Unit]
+Description=LR2021 WLAN-Hotspot (wpa_supplicant-AP + DHCP)
+After=aw859a-wifi.service NetworkManager.service lr2021-firstboot.service
+Wants=aw859a-wifi.service
+
+[Service]
+ExecStart=/usr/local/sbin/lr2021-hotspot
+Restart=on-failure
+RestartSec=5
+KillMode=mixed
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,4 @@
+# LR2021: wlan0 gehört standardmäßig dem eigenen Hotspot-Dienst (lr2021-hotspot), nicht NetworkManager.
+# Für ein eingetragenes Heim-WLAN schaltet lr2021d wlan0 zur Laufzeit an NetworkManager zurück
+# („nmcli device set wlan0 managed yes“).
+SUBSYSTEM=="net", ACTION=="add|change|move", KERNEL=="wlan0", ENV{NM_UNMANAGED}="1"

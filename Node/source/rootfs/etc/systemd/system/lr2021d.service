@@ -1,0 +1,13 @@
+[Unit]
+Description=LR2021 Node-Dienst (Modems, GPS, Bluetooth, Web)
+After=network.target NetworkManager.service bluetooth.service lr2021-firstboot.service
+Wants=bluetooth.service
+
+[Service]
+ExecStart=/usr/bin/python3 /opt/lr2021/lr2021d.py
+Restart=always
+RestartSec=3
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

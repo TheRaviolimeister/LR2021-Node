@@ -1,0 +1,32 @@
+# Build results and downloads
+App/output/
+App/*.zip
+App/*log*.txt
+Node/image/
+Node/download/
+Node/packages/
+Node/*log*.txt
+Node/node_paket.zip
+firmware/build_*/
+firmware/bin/
+firmware/*log*.txt
+*.zip
+*.log
+log.txt
+debug_log.txt
+__pycache__/
+*.pyc
+
+# Flutter (platform folders are generated when building)
+App/source/.dart_tool/
+App/source/build/
+App/source/android/
+App/source/ios/
+App/source/linux/
+App/source/windows/
+App/source/macos/
+App/source/web/
+App/source/.metadata
+App/source/.flutter-plugins*
+App/source/pubspec.lock
+App/source/*.iml

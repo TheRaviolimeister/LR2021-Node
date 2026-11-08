@@ -1,0 +1,4 @@
+# LR2021: NetworkManager soll das USB-Gadget-Netz (usb0) verwalten.
+# Die Standard-Regel 85-nm-unmanaged.rules setzt Gadget-Schnittstellen sonst auf "unmanaged"
+# und das Profil LR2021-USB (192.168.7.1, DHCP für den PC) wird nie aktiv.
+SUBSYSTEM=="net", ACTION=="add|change|move", ENV{DEVTYPE}=="gadget", ENV{NM_UNMANAGED}="0"

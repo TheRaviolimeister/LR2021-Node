@@ -1,0 +1,42 @@
+#!/bin/bash
+# LR2021 Node – WLAN-Hotspot (gestartet von lr2021-hotspot.service, gesteuert von lr2021d).
+# Bewusst ohne NetworkManager-AP: NM bietet dort immer zusätzlich WPA-PSK-SHA256 an, der UWE5622-Treiber
+# kann aber kein PMF -> Handys wählen SHA256 und scheitern mit „falsches Passwort“.
+# Hier: wpa_supplicant im AP-Modus (nur WPA2-PSK/CCMP) + dnsmasq (DHCP/DNS) auf 10.42.0.1/24.
+set -u
+IF=wlan0
+IP=10.42.0.1
+DIR=/run/lr2021
+CONF=$DIR/hotspot.conf
+
+mkdir -p "$DIR"
+/usr/bin/python3 /opt/lr2021/lr2021d.py --hotspot-conf "$CONF" || { echo "Konfiguration fehlgeschlagen"; exit 1; }
+
+# WLAN-Treiber (aw859a-wifi) braucht beim Start ein paar Sekunden
+for _ in $(seq 1 40); do [ -e /sys/class/net/$IF ] && break; sleep 1; done
+[ -e /sys/class/net/$IF ] || { echo "$IF nicht vorhanden"; exit 1; }
+
+nmcli device set $IF managed no >/dev/null 2>&1 || true
+ip addr flush dev $IF
+ip link set $IF up
+ip addr add $IP/24 dev $IF
+
+dnsmasq --keep-in-foreground --conf-file=/dev/null --pid-file= \
+  --interface=$IF --bind-interfaces --except-interface=lo --listen-address=$IP \
+  --no-resolv --no-hosts --dhcp-authoritative \
+  --dhcp-range=10.42.0.10,10.42.0.200,255.255.255.0,12h \
+  --dhcp-option=option:router,$IP --dhcp-option=option:dns-server,$IP \
+  --dhcp-leasefile=$DIR/hotspot.leases \
+  --address=/node.lr2021/$IP &
+DNS=$!
+
+wpa_supplicant -i $IF -D nl80211 -c "$CONF" -s &
+WPA=$!
+
+trap 'kill $DNS $WPA 2>/dev/null' TERM INT
+wait -n $DNS $WPA
+echo "Hotspot-Prozess beendet – Neustart durch systemd"
+kill $DNS $WPA 2>/dev/null
+wait
+ip addr flush dev $IF 2>/dev/null
+exit 1

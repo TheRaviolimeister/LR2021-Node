@@ -1,0 +1,11 @@
+
+  LR2021 Node  –  Orange Pi Zero 2W
+  ---------------------------------------------------------------
+  Web:      http://10.42.0.1 (WLAN-Hotspot)  ·  http://192.168.7.1 (USB-C)
+            http://<hostname>.local
+  Ports:    22 SSH · 80 Web · 2021 ESP32 A (HF 868) · 2022 ESP32 B (LF 433) · 2023 GPS
+  Dienst:   systemctl status lr2021d   ·   journalctl -u lr2021d -f
+  Konfig:   /etc/lr2021/node.json
+  Update:   sudo lr2021-update PAKET.tar.gz   ·   sudo lr2021-update --rollback
+  Standard-Passwörter (lr2021node) bitte ändern: passwd / Weboberfläche
+

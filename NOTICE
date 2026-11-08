@@ -1,0 +1,22 @@
+LR2021 Node
+Copyright (C) 2026 Raviolimeister (RAV1805)
+
+Software and firmware (everything except the hardware documentation) are licensed under the
+GNU General Public License version 3 (see LICENSE).
+
+The hardware documentation (docs/hardware/, wiring diagram, part list, assembly plans) is licensed
+under the CERN Open Hardware Licence Version 2 - Strongly Reciprocal (CERN-OHL-S-2.0, see LICENSE-HARDWARE).
+
+Additional term under section 7(b) of the GPL-3.0 (attribution):
+  Any copy, modified version or product based on this work must keep the attribution
+  "LR2021 Node by Raviolimeister (RAV1805)" together with a link to the original project
+  (https://github.com/TheRaviolimeister/LR2021-Node)
+  in its documentation and, for programs with a user interface, in an "about" or settings screen.
+
+For the hardware documentation, the same attribution is a required notice under section 3 of
+the CERN-OHL-S-2.0.
+
+Third-party components:
+  - lib/serial: pySerial, (C) Chris Liechti, BSD-3-Clause licence (see lib/serial/LICENSE.txt)
+  - RadioLib (used to build the firmware, not included): (C) Jan Gromeš, MIT licence
+  - Flutter packages used by the app are listed in App/source/pubspec.yaml with their own licences

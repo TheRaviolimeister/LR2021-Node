@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LR2021 Node</title>
+<style>
+/* Funkgerät bei Nacht: Graphit, Bernstein (HF 868), Petrol (LF 433) – wie die App */
+:root{--bg:#11161c;--panel:#181e25;--hi:#212933;--line:#2c3642;--fg:#e4e9ee;--muted:#8b97a3;--hf:#f2a33a;--lf:#45b8ac;--ok:#6cc17a;--warn:#e8c04a;--crit:#e5675a;
+--mono:ui-monospace,"Cascadia Mono",Consolas,"DejaVu Sans Mono",monospace;--sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color-scheme:dark}
+@media (prefers-color-scheme: light){:root{--bg:#edf0f3;--panel:#fff;--hi:#f0f2f5;--line:#d9dee4;--fg:#17202a;--muted:#5f6b77;--hf:#b0630a;--lf:#0d7a70;--ok:#2e8a43;--warn:#9a7300;--crit:#c0392b;color-scheme:light}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 var(--sans)}
+main{max-width:1040px;margin:0 auto;padding:20px max(16px,env(safe-area-inset-left)) 48px max(16px,env(safe-area-inset-right));display:flex;flex-direction:column;gap:16px}
+header{display:flex;flex-wrap:wrap;align-items:center;gap:12px 20px;justify-content:space-between}
+h1{margin:0;font-size:1.35rem}
+.sub{color:var(--muted);font:12.5px var(--mono)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px}
+section{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;min-width:0}
+h2{margin:0 0 10px;font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.kv{display:flex;justify-content:space-between;gap:12px;padding:3px 0;border-bottom:1px solid var(--hi)}
+.kv:last-child{border:0}.kv span:first-child{color:var(--muted)}.kv span:last-child{font-family:var(--mono);text-align:right;overflow-wrap:anywhere}
+.modem{border-left:4px solid var(--hf);padding-left:12px}.modem.b{border-color:var(--lf)}
+.big{font:700 20px var(--mono)}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;background:var(--line)}
+.on{background:var(--ok);box-shadow:0 0 6px var(--ok)}
+label{display:block;font-size:12.5px;color:var(--muted);margin:8px 0 3px}
+input{width:100%;padding:9px 10px;border-radius:8px;border:1px solid var(--line);background:var(--hi);color:var(--fg);font:inherit}
+input:focus-visible,button:focus-visible{outline:2px solid var(--hf);outline-offset:1px}
+button{margin-top:10px;padding:9px 14px;border-radius:8px;border:0;background:var(--hf);color:#1a1205;font-weight:600;cursor:pointer}
+button.ghost{background:transparent;border:1px solid var(--line);color:var(--fg)}
+button:disabled{opacity:.5;cursor:wait}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+.msg{margin-top:8px;font-size:13px;white-space:pre-wrap;font-family:var(--mono);max-height:220px;overflow:auto}
+.err{color:var(--crit)}.okc{color:var(--ok)}
+.hint{color:var(--muted);font-size:12.5px;margin:6px 0 0}
+pre{background:var(--hi);border-radius:8px;padding:10px;font:12px var(--mono);max-height:340px;overflow:auto;white-space:pre-wrap}
+table{width:100%;border-collapse:collapse;font-size:13.5px}td,th{text-align:left;padding:4px 6px;border-bottom:1px solid var(--hi)}th{color:var(--muted);font-weight:600}
+td.m{font-family:var(--mono)}
+</style>
+</head>
+<body>
+<main>
+<header>
+  <div><h1 id="name">LR2021 Node</h1><div class="sub" id="sub">verbinde …</div></div>
+  <div class="sub" id="temp"></div>
+</header>
+
+<div class="grid">
+  <section class="modem" id="mA"><h2>ESP32 A · HF 868</h2><div class="body"></div></section>
+  <section class="modem b" id="mB"><h2>ESP32 B · LF 433</h2><div class="body"></div></section>
+  <section id="gps"><h2>GPS</h2><div class="body"></div></section>
+</div>
+
+<div class="grid">
+  <section>
+    <h2>Verbinden</h2>
+    <table>
+      <tr><th>Weg</th><th>Adresse</th><th>Hinweis</th></tr>
+      <tr><td>WLAN</td><td class="m" id="cWifi">10.42.0.1</td><td id="cWifiN"></td></tr>
+      <tr><td>USB</td><td class="m" id="cUsb">192.168.7.1</td><td>USB-C am Pi (Netzwerk über USB)</td></tr>
+      <tr><td>Bluetooth</td><td class="m" id="cBt">–</td><td>koppeln ohne PIN, serielle Kanäle 1 = A, 2 = B, 3 = GPS</td></tr>
+    </table>
+    <p class="hint">App: Funk → „Netzwerk (Pi)“, Adresse wie oben. Ports: 2021 = A, 2022 = B, 2023 = GPS, 22 = SSH, 80 = diese Seite.</p>
+    <div id="ips" class="hint"></div>
+  </section>
+  <section>
+    <h2>WLAN-Hotspot</h2>
+    <label for="ssid">Name (SSID)</label><input id="ssid" maxlength="32">
+    <label for="psk">Passwort (leer = unverändert)</label><input id="psk" type="password" minlength="8" maxlength="63" autocomplete="new-password">
+    <button id="wifiBtn">Speichern</button>
+    <div class="msg" id="wifiMsg"></div>
+  </section>
+</div>
+
+<div class="grid">
+  <section>
+    <h2>Heim-WLAN (optional)</h2>
+    <p class="hint">Ist ein Heim-WLAN eingetragen und erreichbar, verbindet sich die Node dorthin, sonst macht sie den Hotspot auf. Leerer Name = Heim-WLAN entfernen.</p>
+    <div class="kv"><span>WLAN gerade</span><span id="wlanNow">–</span></div>
+    <label for="cssid">Name (SSID)</label><input id="cssid" maxlength="32">
+    <label for="cpsk">Passwort</label><input id="cpsk" type="password" maxlength="63" autocomplete="new-password">
+    <button id="clientBtn">Speichern</button>
+    <div class="msg" id="clientMsg"></div>
+  </section>
+  <section>
+    <h2>Admin-Passwort (Weboberfläche)</h2>
+    <p class="hint">Standard ist lr2021node – bitte ändern. Das Login-Passwort für SSH/Konsole änderst du per SSH mit <code>passwd</code>.</p>
+    <label for="pw1">Neues Passwort (mind. 8 Zeichen)</label><input id="pw1" type="password" minlength="8" autocomplete="new-password">
+    <label for="pw2">Wiederholen</label><input id="pw2" type="password" minlength="8" autocomplete="new-password">
+    <button id="pwBtn">Ändern</button>
+    <div class="msg" id="pwMsg"></div>
+  </section>
+</div>
+
+<div class="grid">
+  <section>
+    <h2>ESP32 neu flashen</h2>
+    <p class="hint">Firmware-Datei (lr2021_modem_A.bin bzw. _B.bin, Adresse 0x0). Der Pi flasht selbst über USB.</p>
+    <label for="espFile">Datei</label><input id="espFile" type="file" accept=".bin">
+    <div class="row"><button id="flashA">Auf ESP32 A</button><button id="flashB" class="ghost">Auf ESP32 B</button></div>
+    <div class="msg" id="espMsg"></div>
+  </section>
+  <section>
+    <h2>Node-Software aktualisieren</h2>
+    <p class="hint">Update-Paket (.tar.gz) vom PC. Die alte Version bleibt gesichert.</p>
+    <label for="updFile">Paket</label><input id="updFile" type="file" accept=".gz,.tgz,.tar">
+    <div class="row"><button id="updBtn">Einspielen</button><button id="rebootBtn" class="ghost">Node neu starten</button></div>
+    <div class="msg" id="updMsg"></div>
+  </section>
+</div>
+
+<section>
+  <h2>Protokoll</h2>
+  <div class="row"><button id="logBtn" class="ghost">Laden</button></div>
+  <pre id="log">–</pre>
+</section>
+<p class="hint">Änderungen fragen nach Benutzer (beliebig) und Passwort (Standard: lr2021node).</p>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '–').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const kv = (k, v) => `<div class="kv"><span>${esc(k)}</span><span>${esc(v)}</span></div>`;
+const dur = s => s == null ? '–' : (s > 86400 ? Math.floor(s/86400)+' d ' : '') + Math.floor(s%86400/3600)+' h '+Math.floor(s%3600/60)+' min';
+let firstLoad = true;
+
+async function load() {
+  try {
+    const r = await fetch('/api/status', {cache: 'no-store'});
+    const s = await r.json();
+    $('name').textContent = s.name;
+    $('sub').textContent = `Version ${s.version} · läuft seit ${dur(s.laufzeit_s)}`;
+    $('temp').textContent = s.temperatur_c != null ? `CPU ${s.temperatur_c.toFixed(1)} °C` : '';
+    for (const r of ['A','B']) {
+      const m = s.modems[r];
+      $('m'+r).querySelector('.body').innerHTML =
+        `<div class="big"><span class="dot ${m.verbunden?'on':''}"></span>${m.verbunden ? (m.wird_geflasht?'wird geflasht':'verbunden') : (m.wird_geflasht?'wird geflasht':'nicht gefunden')}</div>` +
+        kv('Anschluss', m.anschluss) + kv('Firmware', m.firmware) + kv('Funkchip', m.funkchip_ok == null ? '–' : (m.funkchip_ok ? 'bereit' : 'Fehler')) +
+        kv('Chip-ID', m.chip_id) + kv('Verbundene Programme', m.clients) + kv('TCP / Bluetooth', `${m.tcp} / Kanal ${m.bluetooth_kanal}`);
+    }
+    const g = s.gps;
+    $('gps').querySelector('.body').innerHTML =
+      `<div class="big"><span class="dot ${g.valid?'on':''}"></span>${!g.verbunden ? 'nicht gefunden' : (g.valid ? 'Fix' : (g.daten ? 'sucht Satelliten' : 'keine Daten'))}</div>` +
+      kv('Anschluss', g.anschluss) + kv('Satelliten', g.sats) +
+      kv('Position', g.lat != null ? `${g.lat.toFixed(5)}, ${g.lon.toFixed(5)}` : '–') + kv('Höhe', g.alt != null ? g.alt.toFixed(0)+' m' : '–');
+    $('cWifiN').textContent = `WLAN „${s.wlan.ssid}“`;
+    $('cUsb').textContent = s.usb.adresse;
+    $('cBt').textContent = s.bluetooth;
+    $('ips').textContent = 'Adressen: ' + Object.entries(s.adressen).map(([k,v]) => `${k} ${v.join(', ')}`).join(' · ');
+    $('wlanNow').textContent = s.wlan.aktiv ? (s.wlan.aktiv === 'LR2021-Hotspot' ? 'Hotspot' : `verbunden mit „${s.wlan.heim_wlan || s.wlan.aktiv}“`) : 'aus';
+    if (firstLoad) { $('ssid').value = s.wlan.ssid; $('cssid').value = s.wlan.heim_wlan || ''; firstLoad = false; }
+  } catch (e) { $('sub').textContent = 'keine Verbindung zur Node'; }
+}
+
+async function post(url, body, out, type) {
+  out.className = 'msg'; out.textContent = 'läuft …';
+  try {
+    const r = await fetch(url, {method: 'POST', body, headers: type ? {'Content-Type': type} : {}});
+    if (r.status === 401) { out.className = 'msg err'; out.textContent = 'Passwort falsch'; return; }
+    const j = await r.json();
+    out.className = 'msg ' + (j.ok ? 'okc' : 'err');
+    out.textContent = (j.meldung || '') + (j.ausgabe ? '\n\n' + j.ausgabe : '');
+  } catch (e) { out.className = 'msg err'; out.textContent = 'Fehler: ' + e; }
+}
+
+$('wifiBtn').onclick = () => post('/api/wifi', JSON.stringify({ssid: $('ssid').value, psk: $('psk').value}), $('wifiMsg'), 'application/json');
+$('clientBtn').onclick = () => post('/api/wlan', JSON.stringify({ssid: $('cssid').value, psk: $('cpsk').value}), $('clientMsg'), 'application/json');
+$('pwBtn').onclick = () => {
+  if ($('pw1').value !== $('pw2').value) { $('pwMsg').className = 'msg err'; $('pwMsg').textContent = 'Passwörter stimmen nicht überein'; return; }
+  post('/api/password', JSON.stringify({password: $('pw1').value}), $('pwMsg'), 'application/json');
+};
+for (const r of ['A','B']) $('flash'+r).onclick = async () => {
+  const f = $('espFile').files[0];
+  if (!f) { $('espMsg').className = 'msg err'; $('espMsg').textContent = 'Bitte zuerst eine .bin-Datei wählen'; return; }
+  const b = $('flash'+r); b.disabled = true;
+  await post('/api/esp/' + r, f, $('espMsg'), 'application/octet-stream');
+  b.disabled = false; load();
+};
+$('updBtn').onclick = async () => {
+  const f = $('updFile').files[0];
+  if (!f) { $('updMsg').className = 'msg err'; $('updMsg').textContent = 'Bitte zuerst ein Paket wählen'; return; }
+  await post('/api/update', f, $('updMsg'), 'application/octet-stream');
+};
+$('rebootBtn').onclick = () => post('/api/reboot', '{}', $('updMsg'), 'application/json');
+$('logBtn').onclick = async () => {
+  const r = await fetch('/api/log');
+  $('log').textContent = r.status === 401 ? 'Passwort falsch' : await r.text();
+};
+load(); setInterval(load, 3000);
+</script>
+</body>
+</html>

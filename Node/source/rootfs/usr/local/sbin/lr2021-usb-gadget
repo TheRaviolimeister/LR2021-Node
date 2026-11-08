@@ -1,0 +1,49 @@
+#!/bin/sh
+# USB-Gadget am USB-C (OTG) des Orange Pi: Netzwerk (NCM, Windows/Linux/Android) + serielle Konsole.
+# Der PC/das Handy bekommt per DHCP eine Adresse, die Node ist 192.168.7.1.
+set -e
+G=/sys/kernel/config/usb_gadget/lr2021
+modprobe libcomposite 2>/dev/null || true
+mountpoint -q /sys/kernel/config || mount -t configfs none /sys/kernel/config
+[ -d /sys/class/udc ] || { echo "kein USB-Gerätecontroller (UDC)"; exit 0; }
+UDC=$(ls /sys/class/udc | head -n1)
+[ -n "$UDC" ] || { echo "kein USB-Gerätecontroller (UDC) gefunden"; exit 0; }
+if [ -d "$G" ]; then
+  [ -n "$(cat $G/UDC 2>/dev/null)" ] && exit 0
+else
+  ID=$(cat /etc/lr2021/node-id 2>/dev/null || echo 0000)
+  mkdir -p $G && cd $G
+  echo 0x1d6b > idVendor      # Linux Foundation
+  echo 0x0104 > idProduct     # Multifunction Composite Gadget
+  echo 0x0100 > bcdDevice
+  echo 0x0200 > bcdUSB
+  echo 0xEF > bDeviceClass    # Misc / IAD, damit Windows die Teile einzeln erkennt
+  echo 0x02 > bDeviceSubClass
+  echo 0x01 > bDeviceProtocol
+  mkdir -p strings/0x409
+  echo "LR2021-$ID" > strings/0x409/serialnumber
+  echo "LR2021 Projekt" > strings/0x409/manufacturer
+  echo "LR2021 Node" > strings/0x409/product
+  mkdir -p configs/c.1/strings/0x409
+  echo "Netz + Konsole" > configs/c.1/strings/0x409/configuration
+  echo 250 > configs/c.1/MaxPower
+  # Windows soll den eingebauten NCM-Treiber nehmen (MS OS Descriptor)
+  echo 1 > os_desc/use
+  echo 0xcd > os_desc/b_vendor_code
+  echo MSFT100 > os_desc/qw_sign
+  mkdir -p functions/ncm.usb0
+  # feste MAC-Adressen aus der Kennung, damit Windows das Netz wiedererkennt
+  echo "02:4c:52:00:${ID%??}:${ID#??}" | tr 'A-F' 'a-f' > functions/ncm.usb0/host_addr 2>/dev/null || true
+  echo "02:4c:52:01:${ID%??}:${ID#??}" | tr 'A-F' 'a-f' > functions/ncm.usb0/dev_addr 2>/dev/null || true
+  [ -d functions/ncm.usb0/os_desc/interface.ncm ] && {
+    echo WINNCM > functions/ncm.usb0/os_desc/interface.ncm/compatible_id
+  }
+  mkdir -p functions/acm.usb0
+  ln -sf functions/ncm.usb0 configs/c.1/
+  ln -sf functions/acm.usb0 configs/c.1/
+  ln -sf configs/c.1 os_desc/ 2>/dev/null || true
+fi
+echo "$UDC" > $G/UDC
+echo "USB-Gadget aktiv an $UDC"
+# Login-Konsole auf dem USB-COM-Port (ttyGS0) – ist auch per enable verknüpft, hier nur sicherheitshalber
+systemctl --no-block start serial-getty@ttyGS0.service 2>/dev/null || true

@@ -1,0 +1,320 @@
+name: Release
+
+# A tag like v1.6.0 builds all programs and publishes them as a release.
+# The apps get their updates from there.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to (re)build, e.g. 1.6.1 (uses the existing tag v<version>)'
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  FLUTTER_VERSION: '3.47.9'
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      v: ${{ steps.v.outputs.v }}
+    steps:
+      - id: v
+        run: |
+          v="${{ github.event.inputs.version }}"
+          [ -n "$v" ] || v="${GITHUB_REF_NAME#v}"
+          [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]] || v="0.0.0-dev"
+          echo "v=$v" >> "$GITHUB_OUTPUT"
+
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: App/source
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - run: flutter pub get
+      - run: flutter analyze --no-fatal-infos --no-fatal-warnings
+      - run: flutter test
+
+  android:
+    needs: [version, test]
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: App/source
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/wrapper
+            ~/.gradle/caches
+          key: gradle-${{ runner.os }}-${{ env.FLUTTER_VERSION }}
+      - name: Signing key
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+        run: |
+          test -n "$KEYSTORE" || { echo "secret ANDROID_KEYSTORE_B64 missing"; exit 1; }
+          echo "$KEYSTORE" | base64 -d > "$RUNNER_TEMP/lr2021.keystore"
+          echo "LR2021_KEYSTORE=$RUNNER_TEMP/lr2021.keystore" >> "$GITHUB_ENV"
+      - run: bash tools/ci_prepare.sh
+      - name: Gradle mirror if GitHub downloads fail
+        run: |
+          props=android/gradle/wrapper/gradle-wrapper.properties
+          url=$(sed -n 's/^distributionUrl=//p' "$props" | tr -d '\\')
+          if ! curl -sfL -r 0-100 -m 30 -o /dev/null "$url"; then
+            file=$(basename "$url")
+            ver=$(echo "$file" | sed -E 's/^gradle-([0-9.]+)-.*/\1/')
+            for m in "https://mirrors.cloud.tencent.com/gradle/$file" "https://mirrors.aliyun.com/gradle/distributions/v$ver/$file"; do
+              if curl -sfL -r 0-100 -m 30 -o /dev/null "$m"; then
+                sed -i "s#^distributionUrl=.*#distributionUrl=$m#" "$props"
+                echo "Using Gradle mirror $m"; break
+              fi
+            done
+          fi
+          grep distributionUrl "$props"
+      - name: Build (with retries for network hiccups)
+        run: |
+          for i in 1 2 3 4; do
+            flutter build apk --release               --build-name ${{ needs.version.outputs.v }} --build-number ${{ github.run_number }}               --dart-define=APP_VERSION=${{ needs.version.outputs.v }}               --dart-define=UPDATE_REPO=${{ github.repository }} && break
+            echo "retry $i"; sleep 60
+          done
+          test -f build/app/outputs/flutter-apk/app-release.apk
+      - name: Check APK signature
+        run: |
+          apksigner=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          fp=$("$apksigner" verify --print-certs build/app/outputs/flutter-apk/app-release.apk | sed -n 's/.*SHA-256 digest: //p' | head -1)
+          echo "certificate SHA-256: $fp"
+          test "$fp" = "98031cfa9a26795777a46e5ef4577152ba1cd9157015f3e8a995bfb3ec9efc8d"
+      - run: cp build/app/outputs/flutter-apk/app-release.apk ../../LR2021-Node-android.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: LR2021-Node-android.apk
+
+  windows:
+    needs: [version, test]
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: App/source
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - run: |
+          flutter create --platforms=windows --project-name lr2021_app --org de.lr2021 . > /dev/null
+          python tools/patch_platforms.py
+          flutter pub get
+      - run: >
+          flutter build windows --release
+          --build-name ${{ needs.version.outputs.v }} --build-number ${{ github.run_number }}
+          --dart-define=APP_VERSION=${{ needs.version.outputs.v }}
+          --dart-define=UPDATE_REPO=${{ github.repository }}
+      - shell: pwsh
+        run: Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath ../../LR2021-Node-windows-x64.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: LR2021-Node-windows-x64.zip
+
+  linux:
+    needs: [version, test]
+    runs-on: ubuntu-22.04
+    defaults:
+      run:
+        working-directory: App/source
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libudev-dev
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - run: |
+          flutter create --platforms=linux --project-name lr2021_app --org de.lr2021 . > /dev/null
+          python3 tools/patch_platforms.py
+          flutter pub get
+      - run: >
+          flutter build linux --release
+          --build-name ${{ needs.version.outputs.v }} --build-number ${{ github.run_number }}
+          --dart-define=APP_VERSION=${{ needs.version.outputs.v }}
+          --dart-define=UPDATE_REPO=${{ github.repository }}
+      - run: tar -C build/linux/x64/release/bundle -czf ../../LR2021-Node-linux-x64.tar.gz .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: LR2021-Node-linux-x64.tar.gz
+
+  ios:
+    needs: [version, test]
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: App/source
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - run: |
+          flutter create --platforms=ios --project-name lr2021_app --org de.lr2021 . > /dev/null
+          python3 tools/patch_platforms.py
+          flutter pub get
+      - name: Build (unsigned, for AltStore/SideStore/Sideloadly)
+        run: >
+          flutter build ios --release --no-codesign
+          --build-name ${{ needs.version.outputs.v }} --build-number ${{ github.run_number }}
+          --dart-define=APP_VERSION=${{ needs.version.outputs.v }}
+          --dart-define=UPDATE_REPO=${{ github.repository }}
+      - name: Package IPA
+        run: |
+          mkdir -p Payload
+          cp -R build/ios/iphoneos/Runner.app Payload/
+          zip -qry ../../LR2021-Node-ios.ipa Payload
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios
+          path: LR2021-Node-ios.ipa
+
+  firmware:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: arduino/setup-arduino-cli@v2
+      - uses: actions/cache@v4
+        with:
+          path: ~/.arduino15
+          key: arduino15-esp32-3.1.3
+      - name: ESP32 core and RadioLib
+        run: |
+          arduino-cli config init --overwrite
+          # GitHub release downloads can fail (504): first try GitHub, then Espressif's official mirror
+          GH_INDEX=https://espressif.github.io/arduino-esp32/package_esp32_index.json
+          MIRROR_INDEX=https://jihulab.com/esp-mirror/espressif/arduino-esp32/-/raw/gh-pages/package_esp32_index_cn.json
+          arduino-cli config set board_manager.additional_urls "$GH_INDEX"
+          arduino-cli core update-index || true
+          ok=0; CORE=esp32:esp32@3.1.3
+          for i in 1 2 3 4 5 6; do
+            if [ $i -eq 2 ]; then
+              echo "switching to the Espressif mirror (same files, version name 3.1.3-cn)"
+              arduino-cli config set board_manager.additional_urls "$MIRROR_INDEX"
+              arduino-cli core update-index
+              CORE=esp32:esp32@3.1.3-cn
+            fi
+            if arduino-cli core install "$CORE"; then ok=1; break; fi
+            echo "retry $i"; sleep 30
+          done
+          [ $ok -eq 1 ]
+          arduino-cli core list | grep -q 'esp32:esp32'
+          mkdir -p ~/Arduino/libraries
+          git clone --quiet https://github.com/jgromes/RadioLib.git ~/Arduino/libraries/RadioLib
+          git -C ~/Arduino/libraries/RadioLib checkout --quiet 9b98f8e
+      - run: sh firmware/build.sh
+      - run: |
+          cp firmware/bin/lr2021_modem_A.bin LR2021-Modem-A.bin
+          cp firmware/bin/lr2021_modem_B.bin LR2021-Modem-B.bin
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware
+          path: LR2021-Modem-*.bin
+
+  node:
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Node update package
+        run: |
+          cd Node/source
+          tar -czf "../../LR2021-Node-update-${{ needs.version.outputs.v }}.tar.gz" \
+            --exclude __pycache__ --exclude '*.pyc' \
+            -C opt lr2021 \
+            -C ../update install.sh \
+            -C ../rootfs etc/udev/rules.d/90-lr2021-usb-gadget.rules etc/udev/rules.d/91-lr2021-wlan.rules \
+              etc/systemd/system/serial-getty@.service.d/lr2021.conf \
+              etc/systemd/system/lr2021-hotspot.service usr/local/sbin/lr2021-hotspot \
+            -C ../overlay lr2021-nothermal.dtbo lr2021-uart34.dtbo
+      - uses: actions/upload-artifact@v4
+        with:
+          name: node
+          path: LR2021-Node-update-*.tar.gz
+
+  release:
+    needs: [version, android, windows, linux, ios, firmware, node]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
+      - name: AltStore / SideStore source
+        run: |
+          v=${{ needs.version.outputs.v }}
+          repo=${{ github.repository }}
+          size=$(stat -c %s out/LR2021-Node-ios.ipa)
+          date=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          cat > out/altstore-source.json <<EOF
+          {
+            "name": "LR2021 Node",
+            "identifier": "io.github.$(echo ${repo%%/*} | tr 'A-Z' 'a-z').lr2021node",
+            "sourceURL": "https://github.com/$repo/releases/latest/download/altstore-source.json",
+            "apps": [{
+              "name": "LR2021 Node",
+              "bundleIdentifier": "de.lr2021.lr2021App",
+              "developerName": "Raviolimeister",
+              "subtitle": "LoRa mesh node control",
+              "localizedDescription": "App for the LR2021 Node: Meshtastic, MeshCore and LR radio chat, map, radar and node control.",
+              "iconURL": "https://raw.githubusercontent.com/$repo/main/App/source/tools/icons/icon_1024.png",
+              "tintColor": "F2A33A",
+              "version": "$v",
+              "versionDate": "$date",
+              "downloadURL": "https://github.com/$repo/releases/download/v$v/LR2021-Node-ios.ipa",
+              "size": $size,
+              "versions": [{
+                "version": "$v",
+                "date": "$date",
+                "downloadURL": "https://github.com/$repo/releases/download/v$v/LR2021-Node-ios.ipa",
+                "size": $size,
+                "minOSVersion": "13.0"
+              }]
+            }],
+            "news": []
+          }
+          EOF
+          python3 -m json.tool out/altstore-source.json > /dev/null
+      - name: Checksums
+        run: cd out && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
+      - name: Release notes
+        run: |
+          v=${{ needs.version.outputs.v }}
+          awk -v v="$v" '$0 ~ "^## "v"( |$)" {f=1; next} /^## / && f {exit} f' CHANGELOG.md > notes.md || true
+          [ -s notes.md ] || echo "LR2021 Node $v" > notes.md
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.version.outputs.v }}
+          name: LR2021 Node ${{ needs.version.outputs.v }}
+          body_path: notes.md
+          files: out/*

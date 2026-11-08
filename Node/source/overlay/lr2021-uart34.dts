@@ -1,0 +1,45 @@
+/*
+ * LR2021: UART3 und UART4 für die beiden ESP32-Modems einschalten (500000 Baud – 460800 kann der H618 nicht exakt).
+ *   UART3: TX = PI9 (Pin 28), RX = PI10 (Pin 27)  -> /dev/ttyS3 = ESP32 A (HF 868)
+ *   UART4: TX = PI13 (Pin 7), RX = PI14 (Pin 16)  -> /dev/ttyS4 = ESP32 B (LF 433)
+ * Eigene Pin-Gruppen, weil der Device-Tree des Armbian-Kernels 6.18.60 (trunk) für
+ * uart3-pi-pins/uart4-pi-pins fälschlich function = "uart2" setzt und das mitgelieferte
+ * Overlay sun50i-h616-uart4-pi.dtbo außerdem uart3 statt uart4 einschaltet.
+ */
+/dts-v1/;
+/plugin/;
+/ {
+	compatible = "allwinner,sun50i-h616";
+
+	fragment@0 {
+		target-path = "/soc/pinctrl@300b000";
+		__overlay__ {
+			lr2021_uart3_pins: lr2021-uart3-pins {
+				pins = "PI9", "PI10";
+				function = "uart3";
+			};
+			lr2021_uart4_pins: lr2021-uart4-pins {
+				pins = "PI13", "PI14";
+				function = "uart4";
+			};
+		};
+	};
+
+	fragment@1 {
+		target-path = "/soc/serial@5000c00";	/* uart3 */
+		__overlay__ {
+			pinctrl-names = "default";
+			pinctrl-0 = <&lr2021_uart3_pins>;
+			status = "okay";
+		};
+	};
+
+	fragment@2 {
+		target-path = "/soc/serial@5001000";	/* uart4 */
+		__overlay__ {
+			pinctrl-names = "default";
+			pinctrl-0 = <&lr2021_uart4_pins>;
+			status = "okay";
+		};
+	};
+};

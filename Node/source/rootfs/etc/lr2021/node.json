@@ -1,0 +1,26 @@
+{
+  "node_name": "",
+  "admin_password": "lr2021node",
+  "ap_ssid": "",
+  "ap_psk": "lr2021node",
+  "ap_band": "bg",
+  "ap_channel": 6,
+  "wlan_client_ssid": "",
+  "usb_ip": "192.168.7.1",
+  "ports": [],
+  "skip_ports": [],
+  "uart_baud": 500000,
+  "usb_baud": 115200,
+  "gps_port": "/dev/ttyS5",
+  "gps_baud": 9600,
+  "tcp_port_a": 2021,
+  "tcp_port_b": 2022,
+  "tcp_port_gps": 2023,
+  "http_port": 80,
+  "bluetooth": true,
+  "bt_channels": {
+    "A": 1,
+    "B": 2,
+    "GPS": 3
+  }
+}
