@@ -1,0 +1,43 @@
+{
+ "version": "1.6.6",
+ "page": "https://github.com/TheRaviolimeister/LR2021-Node/releases/tag/v1.6.6",
+ "notes": "\n- Maintenance release (no functional changes)\n\n",
+ "assets": {
+  "LR2021-Modem-A.bin": {
+   "size": 479872,
+   "sha256": "220bd93218d59d5fbdbdf9942594091415aaece3cd627952b53008809aeda96b"
+  },
+  "LR2021-Modem-B.bin": {
+   "size": 479872,
+   "sha256": "b996379a09e91c05e45cf121904f9f424b8e9894d3cd1a750cda2d88fb7617db"
+  },
+  "LR2021-Node-android.apk": {
+   "size": 61894102,
+   "sha256": "6c418ffb852c7a15e8ac152b1cacc9f5f6c184d14bac3c041f291f78f38b0971"
+  },
+  "LR2021-Node-ios.ipa": {
+   "size": 9522928,
+   "sha256": "c2a48b957098ddb205cd468adfe1ac5a0fba411754fed0fb3bc028a4ec4f9bca"
+  },
+  "LR2021-Node-linux-x64.tar.gz": {
+   "size": 11123358,
+   "sha256": "61adc3feb0d1223ca77a33b70a7b1a5ec83920e3ab6ccee77795364f5f485898"
+  },
+  "LR2021-Node-update-1.6.6.tar.gz": {
+   "size": 30464,
+   "sha256": "df3ca623141bb737e8b8ff21a43972889ba404508bfa9292c572e1c7911d60ec"
+  },
+  "LR2021-Node-windows-x64.zip": {
+   "size": 13542618,
+   "sha256": "0992610fe547097d6ed064b769ec0e6188526e622842d3eeaa137afb2baadef7"
+  },
+  "SHA256SUMS.txt": {
+   "size": 720,
+   "sha256": "087c36bfb9355a2b4f7a5a6a0aa8a4edc16aaf992f7e3a98b969dd479efc56a8"
+  },
+  "altstore-source.json": {
+   "size": 1112,
+   "sha256": "e97f32dd01507a58fd6c0c940c4b0c27cb831f2e21e446d1e8639be68d967ad6"
+  }
+ }
+}
