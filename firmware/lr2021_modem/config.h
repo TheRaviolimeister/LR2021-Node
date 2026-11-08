@@ -7,7 +7,7 @@
 
 #define FW_VERSION_MAJOR 1
 #define FW_VERSION_MINOR 0
-#define FW_VERSION_PATCH 15
+#define FW_VERSION_PATCH 16
 
 #if !defined(MODEM_ROLE_A) && !defined(MODEM_ROLE_B)
   #define MODEM_ROLE_A

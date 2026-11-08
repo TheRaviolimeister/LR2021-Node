@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.6.2
+
+- Radio: the receiver front-end calibration is now forced every time a modem is configured. Before, the
+  LR2021 could receive without calibration (chip error 0x0200), which costs sensitivity and SNR.
+  Firmware 1.0.16 does the same on its own; with app 1.6.2 the fix also works with firmware 1.0.15.
+- Frequency correction is measured on every received packet (including relays of your own messages), so
+  the crystal offset of the radio module is corrected automatically after a few packets.
+- Data from the demo modem is no longer stored; demo nodes and messages from earlier versions are removed.
+- ESP32 firmware 1.0.16
+
 ## 1.6.1
 
 - iOS app (iPhone/iPad), installable with AltStore, SideStore or Sideloadly; the release contains an

@@ -170,6 +170,20 @@ static int16_t probeChip(uint8_t* busyDuringReset, uint32_t* bootMs) {
   return RADIOLIB_ERR_NONE;
 }
 
+// Der LR2021 kalibriert sein Empfangs-Frontend nur, wenn sich die Frequenz um mindestens 20 MHz ändert
+// (RadioLib setFrequency). Nach dem Reset in applyConfig ist die Kalibrierung verloren, beim erneuten Setzen
+// derselben Frequenz würde sie übersprungen -> Empfang unkalibriert (Chipfehler 0x0200). Deshalb hier über
+// eine 30 MHz entfernte Frequenz erzwingen.
+static int16_t forceFrontEndCal(uint32_t f) {
+  auto valid = [](uint32_t x) {
+    return (x >= 150000000UL && x <= 1090000000UL) || (x >= 1900000000UL && x <= 2200000000UL) ||
+           (x >= 2400000000UL && x <= 2500000000UL);
+  };
+  uint32_t other = valid(f + 30000000UL) ? f + 30000000UL : f - 30000000UL;
+  radio.setFrequency(other, true);          // nur umstellen, ohne Kalibrierung
+  return radio.setFrequency(f, false);      // zurück: Abstand >= 20 MHz -> Kalibrierung für f
+}
+
 int16_t Modem::applyConfig(int16_t* rc) {
   int16_t s;
   {
@@ -200,6 +214,7 @@ int16_t Modem::applyConfig(int16_t* rc) {
     c.power = fsk_.power_dbm;
     c.preambleLength = fsk_.preamble_bits;
     s = radio.beginGFSK(c);
+    if (s == RADIOLIB_ERR_NONE) s = forceFrontEndCal(fsk_.freq_hz);
     if (s == RADIOLIB_ERR_NONE) s = radio.setSyncWord((uint8_t*)fsk_.sync, fsk_.sync_len);
     if (s == RADIOLIB_ERR_NONE) s = radio.setCRC(fsk_.crc_len);
     if (s == RADIOLIB_ERR_NONE) s = radio.setWhitening(fsk_.flags & 0x01);
@@ -222,6 +237,7 @@ int16_t Modem::applyConfig(int16_t* rc) {
     c.power = lora_.power_dbm;
     c.preambleLength = lora_.preamble;
     s = radio.begin(c);
+    if (s == RADIOLIB_ERR_NONE) s = forceFrontEndCal(lora_.freq_hz);
     if (s == RADIOLIB_ERR_NONE) s = radio.setCRC((lora_.flags & 0x01) ? 2 : 0);
     if (s == RADIOLIB_ERR_NONE) s = radio.invertIQ(lora_.flags & 0x02);
     if (s == RADIOLIB_ERR_NONE) s = (lora_.flags & 0x04) ? radio.implicitHeader(lora_.implicit_len) : radio.explicitHeader();

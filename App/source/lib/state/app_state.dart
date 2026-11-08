@@ -265,6 +265,7 @@ class NodeApp extends ChangeNotifier {
       _log(tr('App'), LogKind.err, tr('Gespeicherte Daten nicht lesbar'), '$e');
     }
     L.lang = settings.lang;
+    purgeDemo(); // alte Demo-Daten aus früheren Versionen entfernen
     _initKeys();
     try {
       final dir = await getApplicationDocumentsDirectory();
@@ -325,14 +326,45 @@ class NodeApp extends ChangeNotifier {
     _saveTimer = Timer(const Duration(seconds: 2), saveNow);
   }
 
+  // ------------------------------------------------------------------ Demo-Daten
+  /// Knoten, die nur aus dem Demo-Modem stammen – werden nie gespeichert.
+  final Set<String> _demoKeys = {};
+
+  bool _isDemoKey(String key) {
+    if (_demoKeys.contains(key)) return true;
+    final n = nodes[key];
+    if (n == null) return false;
+    if (n.net == Net.mt && demoNodeNums.contains(n.num)) return true;
+    if (n.net == Net.lr && demoLrCalls.contains(n.shortName)) return true;
+    if (n.net == Net.mc && n.longName == demoMeshCoreName) return true;
+    return false;
+  }
+
+  bool _isDemoMessage(Message m) => !m.mine && _isDemoKey(m.from);
+
+  /// Alles aus der Demo entfernen (beim Start und wenn das Demo-Modem getrennt wird).
+  void purgeDemo() {
+    final keys = nodes.keys.where(_isDemoKey).toSet()..addAll(_demoKeys);
+    if (keys.isEmpty) return;
+    messages.removeWhere((m) => !m.mine && keys.contains(m.from));
+    waypoints.removeWhere((w) => keys.contains(w.from));
+    for (final k in keys) {
+      nodes.remove(k);
+    }
+    _demoKeys.clear();
+    _scheduleSave();
+    notifyListeners();
+  }
+
   Future<void> saveNow() async {
     final p = _prefs;
     if (p == null) return;
     try {
       await p.setString('settings', jsonEncode(settings.toJson()));
-      await p.setString('waypoints', jsonEncode(waypoints.map((w) => w.toJson()).toList()));
-      await p.setString('nodes', jsonEncode(nodes.values.map((n) => n.toJson()).toList()));
-      final keep = messages.length > 2000 ? messages.sublist(messages.length - 2000) : messages;
+      await p.setString('waypoints', jsonEncode(waypoints.where((w) => !_isDemoKey(w.from)).map((w) => w.toJson()).toList()));
+      await p.setString('nodes', jsonEncode(nodes.values.where((n) => !_isDemoKey(n.key)).map((n) => n.toJson()).toList()));
+      final real = messages.where((m) => !_isDemoMessage(m)).toList();
+      final keep = real.length > 2000 ? real.sublist(real.length - 2000) : real;
       await p.setString('messages', jsonEncode(keep.map((m) => m.toJson()).toList()));
     } catch (e) {
       _log(tr('App'), LogKind.err, tr('Speichern fehlgeschlagen'), '$e');
@@ -553,6 +585,7 @@ class NodeApp extends ChangeNotifier {
       s.manualOff = true;
       s._reconnect?.cancel();
     }
+    if (s.kind == TransportKind.demo) purgeDemo();
     final c = s.client;
     await s._sub?.cancel();
     s._sub = null;
@@ -664,6 +697,18 @@ class NodeApp extends ChangeNotifier {
     try {
       s.status = tr('stelle ein …');
       notifyListeners();
+      // Der LR2021 kalibriert sein Empfangs-Frontend nur bei einem Frequenzwechsel von mindestens 20 MHz.
+      // Deshalb kurz auf eine 30 MHz entfernte Frequenz und zurück – sonst empfängt er unkalibriert (Fehler 0x0200).
+      if (s.kind != TransportKind.demo) {
+        final f = cfg.freqHz;
+        final upper = f > 2000000000 ? 2500000000 : (s.info?.subMaxHz ?? f + 40000000);
+        final shifted = cfg.copy()
+          ..freqHz = f + (f + 31000000 <= upper ? 30000000 : -30000000)
+          ..powerDbm = 0;
+        try {
+          await c.setLora(shifted);
+        } catch (_) {}
+      }
       await c.setLora(cfg);
       await c.rxStart();
       s.config = await c.config();
@@ -1515,6 +1560,7 @@ class NodeApp extends ChangeNotifier {
   }
 
   Node _node(String key, Net net, int num, ModemSlot s, RxEvent e, {int? hops}) {
+    if (s.kind == TransportKind.demo) _demoKeys.add(key);
     final n = nodes.putIfAbsent(key, () => Node(key, net, num, e.at));
     n.lastHeard = e.at;
     n.packets++;
@@ -1566,8 +1612,9 @@ class NodeApp extends ChangeNotifier {
       return;
     }
     final me = settings.myNum;
-    // Eigenes Paket wurde weitergeleitet
+    // Eigenes Paket wurde weitergeleitet (die Frequenz des weiterleitenden Knotens taugt auch zum Messen)
     if (p.from == me && me != 0) {
+      _trackFreqErr(s, e);
       final m = _awaitAck[p.id];
       if (m != null && (m.status == MsgStatus.sent || m.status == MsgStatus.pending)) {
         m.status = MsgStatus.relayed;
@@ -1619,7 +1666,7 @@ class NodeApp extends ChangeNotifier {
         (!hamMode(s) || (ok && (p.channelIndex ?? 0) >= settings.channels.length));
     if (mayRelay && me != 0 && p.hopLimit > 0 && p.dest != me && !p.viaMqtt) _scheduleRelay(s, e, p, dupKey);
     final n = _node(key, Net.mt, p.from, s, e, hops: p.hopsAway);
-    if (p.hopsAway == 0) _trackFreqErr(s, e);
+    _trackFreqErr(s, e);
     if (!ok) return;
     final a = p.app;
     // Unbekannte Knoten: einmal nach der Visitenkarte fragen (wie die Meshtastic-Firmware)

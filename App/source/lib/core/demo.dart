@@ -348,6 +348,11 @@ class DemoTransport implements Transport {
   static Uint8List _utf8(String s) => Uint8List.fromList(utf8.encode(s));
 }
 
+/// Kennungen der simulierten Stationen (zum Aufräumen alter Demo-Daten).
+Set<int> get demoNodeNums => {for (final p in DemoTransport._peers) p.num};
+Set<String> get demoLrCalls => {for (final s in DemoTransport._lrStations) s[0]};
+const demoMeshCoreName = 'MC Repeater Demo';
+
 class _Peer {
   final int num;
   final String long, short;
