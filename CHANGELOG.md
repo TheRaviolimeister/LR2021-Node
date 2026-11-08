@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.6.5
+
+- Android: app update is downloaded to the app's own storage instead of the cache folder (the system
+  could remove the file during the download)
+- If an update download fails on Android, the download is opened in the browser instead
+
 ## 1.6.4
 
 - Settings → App update shows where the update information came from (GitHub or mirror)

@@ -711,4 +711,6 @@ const Map<String, String> enTexts = {
   'Spiegel (raw.githubusercontent.com)': 'mirror (raw.githubusercontent.com)',
   'Spiegel (jsDelivr)': 'mirror (jsDelivr)',
   ' Quelle: {0}': ' Source: {0}',
+  'Datei nach dem Download nicht gefunden': 'File not found after download',
+  ' – Download im Browser geöffnet.': ' – download opened in the browser.',
 };

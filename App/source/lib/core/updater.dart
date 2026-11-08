@@ -12,7 +12,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../i18n.dart';
 
 /// Version dieser App (beim Bauen per --dart-define=APP_VERSION=… gesetzt).
-const appVersion = String.fromEnvironment('APP_VERSION', defaultValue: '1.6.4');
+const appVersion = String.fromEnvironment('APP_VERSION', defaultValue: '1.6.5');
 
 /// GitHub-Repository mit den Releases (beim Bauen per --dart-define=UPDATE_REPO=besitzer/name gesetzt).
 const updateRepo = String.fromEnvironment('UPDATE_REPO', defaultValue: 'TheRaviolimeister/LR2021-Node');
@@ -186,26 +186,49 @@ class Updater extends ChangeNotifier {
     }
   }
 
-  Future<File> _download(UpdateInfo u) async {
-    final dir = Directory('${(await getTemporaryDirectory()).path}${Platform.pathSeparator}lr2021_update');
-    if (await dir.exists()) await dir.delete(recursive: true);
+  /// Ordner für Downloads. Android: App-Datenordner (den Cache-Ordner darf das System jederzeit leeren,
+  /// z. B. bei wenig Speicher – dann verschwindet die APK mitten im Download).
+  Future<Directory> _updateDir() async {
+    final base = Platform.isAndroid ? await getApplicationSupportDirectory() : await getTemporaryDirectory();
+    final dir = Directory('${base.path}${Platform.pathSeparator}lr2021_update');
     await dir.create(recursive: true);
-    final f = File('${dir.path}${Platform.pathSeparator}${u.assetName}');
-    final urls = [u.assetUrl, u.mirrorUrl].where((x) => x.isNotEmpty).toList();
-    Object? last;
+    return dir;
+  }
+
+  Future<File> _download(UpdateInfo u) async {
+    final dir = await _updateDir();
+    // alte Reste entfernen (nicht den Ordner selbst)
+    try {
+      await for (final e in dir.list(followLinks: false)) {
+        try {
+          await e.delete(recursive: true);
+        } catch (_) {}
+      }
+    } catch (_) {}
+    final sep = Platform.pathSeparator;
+    final f = File('${dir.path}$sep${u.assetName}');
+    final urls = [u.assetUrl, u.mirrorUrl].where((x) => x.isNotEmpty).toSet().toList();
+    final errors = <String>[];
     for (final url in urls) {
+      final part = File('${dir.path}$sep${u.assetName}.${DateTime.now().millisecondsSinceEpoch}.part');
       try {
-        await _fetch(url, f, u.size);
+        await part.parent.create(recursive: true);
+        await _fetch(url, part, u.size);
+        if (!await part.exists()) throw Exception(tr('Datei nach dem Download nicht gefunden'));
         if (u.sha256.isNotEmpty) {
-          final digest = crypto.sha256.convert(await f.readAsBytes()).toString();
+          final digest = (await crypto.sha256.bind(part.openRead()).first).toString();
           if (digest.toLowerCase() != u.sha256.toLowerCase()) throw Exception(tr('Prüfsumme stimmt nicht'));
         }
-        return f;
+        if (await f.exists()) await f.delete();
+        return await part.rename(f.path);
       } catch (e) {
-        last = e;
+        errors.add('${Uri.parse(url).host}: ${e.toString().replaceFirst('Exception: ', '').split('\n').first}');
+        try {
+          if (await part.exists()) await part.delete();
+        } catch (_) {}
       }
     }
-    throw last ?? Exception(tr('Download fehlgeschlagen'));
+    throw Exception(errors.isEmpty ? tr('Download fehlgeschlagen') : errors.join(' / '));
   }
 
   /// Update laden und installieren. Gibt Fehlertext oder null zurück.
@@ -278,7 +301,16 @@ class Updater extends ChangeNotifier {
       }
       exit(0);
     } catch (e) {
-      status = tr('Update fehlgeschlagen: {0}', [e]);
+      status = tr('Update fehlgeschlagen: {0}', [e.toString().replaceFirst('Exception: ', '')]);
+      if (Platform.isAndroid) {
+        // Ausweg: APK im Browser laden lassen, der Nutzer installiert sie aus den Downloads
+        final link = u.mirrorUrl.isNotEmpty ? u.mirrorUrl : u.assetUrl;
+        try {
+          if (await launchUrl(Uri.parse(link), mode: LaunchMode.externalApplication)) {
+            status += tr(' – Download im Browser geöffnet.');
+          }
+        } catch (_) {}
+      }
       return status;
     } finally {
       busy = false;
