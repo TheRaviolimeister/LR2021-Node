@@ -24,7 +24,7 @@ own Apple ID:
 
 1. Install **AltStore** (https://altstore.io) or **SideStore** (https://sidestore.io) on the iPhone.
 2. In AltStore/SideStore → Sources → **+**, add the source
-   `https://github.com/TheRaviolimeister/LR2021-Node/releases/latest/download/altstore-source.json`
+   `https://raw.githubusercontent.com/TheRaviolimeister/LR2021-Node/dist/altstore-source.json`
 3. Install “LR2021 Node” from that source. New versions then appear there and are installed automatically.
 
 Alternatively install `LR2021-Node-ios.ipa` from the release with Sideloadly. With a free Apple ID the

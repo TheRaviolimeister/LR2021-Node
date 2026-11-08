@@ -280,7 +280,7 @@ jobs:
           {
             "name": "LR2021 Node",
             "identifier": "io.github.$(echo ${repo%%/*} | tr 'A-Z' 'a-z').lr2021node",
-            "sourceURL": "https://github.com/$repo/releases/latest/download/altstore-source.json",
+            "sourceURL": "https://raw.githubusercontent.com/$repo/dist/altstore-source.json",
             "apps": [{
               "name": "LR2021 Node",
               "bundleIdentifier": "de.lr2021.lr2021App",
@@ -291,12 +291,12 @@ jobs:
               "tintColor": "F2A33A",
               "version": "$v",
               "versionDate": "$date",
-              "downloadURL": "https://github.com/$repo/releases/download/v$v/LR2021-Node-ios.ipa",
+              "downloadURL": "https://raw.githubusercontent.com/$repo/dist/LR2021-Node-ios.ipa",
               "size": $size,
               "versions": [{
                 "version": "$v",
                 "date": "$date",
-                "downloadURL": "https://github.com/$repo/releases/download/v$v/LR2021-Node-ios.ipa",
+                "downloadURL": "https://raw.githubusercontent.com/$repo/dist/LR2021-Node-ios.ipa",
                 "size": $size,
                 "minOSVersion": "13.0"
               }]
@@ -312,6 +312,39 @@ jobs:
           v=${{ needs.version.outputs.v }}
           awk -v v="$v" '$0 ~ "^## "v"( |$)" {f=1; next} /^## / && f {exit} f' CHANGELOG.md > notes.md || true
           [ -s notes.md ] || echo "LR2021 Node $v" > notes.md
+      - name: Mirror in branch dist (used when the GitHub API or release downloads are down)
+        run: |
+          v=${{ needs.version.outputs.v }}
+          repo=${{ github.repository }}
+          V="$v" REPO="$repo" python3 - <<'EOF'
+          import hashlib, json, os
+          v, repo = os.environ["V"], os.environ["REPO"]
+          assets = {}
+          for name in sorted(os.listdir("out")):
+              path = os.path.join("out", name)
+              data = open(path, "rb").read()
+              assets[name] = {"size": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+          manifest = {
+              "version": v,
+              "page": "https://github.com/%s/releases/tag/v%s" % (repo, v),
+              "notes": open("notes.md", encoding="utf-8").read(),
+              "assets": assets,
+          }
+          json.dump(manifest, open("out-latest.json", "w"), indent=1)
+          EOF
+          mkdir dist
+          cp out/* dist/
+          mv out-latest.json dist/latest.json
+          cd dist
+          git init -q -b dist
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "LR2021 Node $v"
+          for i in 1 2 3 4 5; do
+            git push -q --force "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/$repo.git" dist && break
+            echo "retry $i"; sleep 30
+          done
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.version.outputs.v }}

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:archive/archive.dart';
+import 'package:crypto/crypto.dart' as crypto;
 import 'package:flutter/foundation.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
@@ -11,7 +12,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../i18n.dart';
 
 /// Version dieser App (beim Bauen per --dart-define=APP_VERSION=… gesetzt).
-const appVersion = String.fromEnvironment('APP_VERSION', defaultValue: '1.6.2');
+const appVersion = String.fromEnvironment('APP_VERSION', defaultValue: '1.6.3');
 
 /// GitHub-Repository mit den Releases (beim Bauen per --dart-define=UPDATE_REPO=besitzer/name gesetzt).
 const updateRepo = String.fromEnvironment('UPDATE_REPO', defaultValue: 'TheRaviolimeister/LR2021-Node');
@@ -19,20 +20,28 @@ const updateRepo = String.fromEnvironment('UPDATE_REPO', defaultValue: 'TheRavio
 class UpdateInfo {
   final String version, notes, assetName, assetUrl, pageUrl;
   final int size;
-  UpdateInfo(this.version, this.notes, this.assetName, this.assetUrl, this.pageUrl, this.size);
+  final String mirrorUrl; // Ausweich-Download (Zweig „dist“ über raw.githubusercontent.com)
+  final String sha256; // Prüfsumme der Datei (aus latest.json), leer = unbekannt
+  UpdateInfo(this.version, this.notes, this.assetName, this.assetUrl, this.pageUrl, this.size,
+      {this.mirrorUrl = '', this.sha256 = ''});
 }
 
 /// Sucht neue Versionen in den GitHub-Releases und installiert sie.
 ///   Android: APK laden und den System-Installer öffnen
 ///   Windows: ZIP laden, nach dem Beenden der App ersetzen und neu starten
 ///   Linux:   tar.gz laden, nach dem Beenden ersetzen und neu starten
-///   iOS:     Download-Seite öffnen; mit AltStore/SideStore (Quelle im Release) kommen Updates automatisch
+///   iOS:     Download-Seite öffnen; mit AltStore/SideStore (Quelle im Zweig „dist“) kommen Updates automatisch
+/// Ist die GitHub-Schnittstelle gestört, kommen Versionsinfo und Dateien aus dem Zweig „dist“
+/// (raw.githubusercontent.com bzw. jsDelivr). Heruntergeladene Dateien werden per SHA-256 geprüft.
 class Updater extends ChangeNotifier {
   UpdateInfo? available;
   String status = '';
   double? progress;
   bool busy = false;
   DateTime? lastCheck;
+
+  static const rawBase = 'https://raw.githubusercontent.com/$updateRepo/dist';
+  static const cdnBase = 'https://cdn.jsdelivr.net/gh/$updateRepo@dist';
 
   static String get platformAsset {
     if (Platform.isAndroid) return 'LR2021-Node-android.apk';
@@ -55,47 +64,116 @@ class Updater extends ChangeNotifier {
     return 0;
   }
 
+  static Future<Map<String, dynamic>> _getJson(String url, {bool github = false}) async {
+    final c = HttpClient()..connectionTimeout = const Duration(seconds: 10);
+    try {
+      final req = await c.getUrl(Uri.parse(url));
+      req.headers.set(HttpHeaders.userAgentHeader, 'LR2021-Node-App/$appVersion');
+      if (github) req.headers.set(HttpHeaders.acceptHeader, 'application/vnd.github+json');
+      final res = await req.close().timeout(const Duration(seconds: 15));
+      final body = await res.transform(utf8.decoder).join().timeout(const Duration(seconds: 20));
+      if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
+      return jsonDecode(body) as Map<String, dynamic>;
+    } finally {
+      c.close(force: true);
+    }
+  }
+
+  /// Versionsinfo aus der GitHub-Schnittstelle.
+  Future<UpdateInfo?> _fromApi() async {
+    final j = await _getJson('https://api.github.com/repos/$updateRepo/releases/latest', github: true);
+    final tag = (j['tag_name'] as String? ?? '').trim();
+    final assets = (j['assets'] as List? ?? const []).cast<Map<String, dynamic>>();
+    final a = assets.where((x) => x['name'] == platformAsset).firstOrNull;
+    return UpdateInfo(
+      tag.replaceFirst(RegExp(r'^[vV]'), ''),
+      j['body'] as String? ?? '',
+      a?['name'] as String? ?? '',
+      a?['browser_download_url'] as String? ?? '',
+      j['html_url'] as String? ?? 'https://github.com/$updateRepo/releases',
+      a?['size'] as int? ?? 0,
+      mirrorUrl: a == null ? '' : '$rawBase/$platformAsset',
+    );
+  }
+
+  /// Versionsinfo aus latest.json im Zweig „dist“.
+  Future<UpdateInfo?> _fromManifest(String base) async {
+    final j = await _getJson('$base/latest.json');
+    final v = (j['version'] as String? ?? '').trim();
+    final assets = (j['assets'] as Map?)?.cast<String, dynamic>() ?? const {};
+    final a = (assets[platformAsset] as Map?)?.cast<String, dynamic>();
+    return UpdateInfo(
+      v,
+      j['notes'] as String? ?? '',
+      a == null ? '' : platformAsset,
+      a == null ? '' : 'https://github.com/$updateRepo/releases/download/v$v/$platformAsset',
+      j['page'] as String? ?? 'https://github.com/$updateRepo/releases',
+      a?['size'] as int? ?? 0,
+      mirrorUrl: a == null ? '' : '$rawBase/$platformAsset',
+      sha256: a?['sha256'] as String? ?? '',
+    );
+  }
+
   Future<UpdateInfo?> check() async {
     if (busy) return available;
     busy = true;
     status = tr('suche nach Updates …');
     notifyListeners();
+    final errors = <String>[];
+    UpdateInfo? info;
+    for (final src in [() => _fromApi(), () => _fromManifest(rawBase), () => _fromManifest(cdnBase)]) {
+      try {
+        info = await src();
+        if (info != null && info.version.isNotEmpty) break;
+      } catch (e) {
+        errors.add(e.toString().replaceFirst('Exception: ', '').split('\n').first);
+      }
+    }
     try {
-      final c = HttpClient()..connectionTimeout = const Duration(seconds: 10);
-      final req = await c.getUrl(Uri.parse('https://api.github.com/repos/$updateRepo/releases/latest'));
-      req.headers
-        ..set(HttpHeaders.userAgentHeader, 'LR2021-Node-App/$appVersion')
-        ..set(HttpHeaders.acceptHeader, 'application/vnd.github+json');
-      final res = await req.close().timeout(const Duration(seconds: 15));
-      final body = await res.transform(utf8.decoder).join();
-      c.close();
-      if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
-      final j = jsonDecode(body) as Map<String, dynamic>;
-      final tag = (j['tag_name'] as String? ?? '').trim();
+      if (info == null || info.version.isEmpty) {
+        status = tr('Keine Verbindung zum Update-Server ({0}).', [errors.join(' / ')]);
+        return null;
+      }
       lastCheck = DateTime.now();
-      if (tag.isEmpty || compare(tag, appVersion) <= 0) {
+      if (compare(info.version, appVersion) <= 0) {
         available = null;
         status = tr('Die App ist aktuell ({0}).', [appVersion]);
         return null;
       }
-      final assets = (j['assets'] as List? ?? const []).cast<Map<String, dynamic>>();
-      final a = assets.where((x) => x['name'] == platformAsset).firstOrNull;
-      available = UpdateInfo(
-        tag.replaceFirst(RegExp(r'^[vV]'), ''),
-        j['body'] as String? ?? '',
-        a?['name'] as String? ?? '',
-        a?['browser_download_url'] as String? ?? '',
-        j['html_url'] as String? ?? 'https://github.com/$updateRepo/releases',
-        a?['size'] as int? ?? 0,
-      );
-      status = tr('Version {0} ist verfügbar.', [available!.version]);
-      return available;
-    } catch (e) {
-      status = tr('Keine Verbindung zum Update-Server ({0}).', [e.toString().split('\n').first]);
-      return null;
+      available = info;
+      status = tr('Version {0} ist verfügbar.', [info.version]);
+      return info;
     } finally {
       busy = false;
       notifyListeners();
+    }
+  }
+
+  Future<void> _fetch(String url, File f, int sizeHint) async {
+    final c = HttpClient()..connectionTimeout = const Duration(seconds: 15);
+    try {
+      final req = await c.getUrl(Uri.parse(url));
+      req.headers.set(HttpHeaders.userAgentHeader, 'LR2021-Node-App/$appVersion');
+      final res = await req.close().timeout(const Duration(seconds: 30));
+      if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
+      final total = res.contentLength > 0 ? res.contentLength : sizeHint;
+      final sink = f.openWrite();
+      var got = 0;
+      try {
+        await for (final chunk in res.timeout(const Duration(seconds: 60))) {
+          sink.add(chunk);
+          got += chunk.length;
+          if (total > 0) {
+            progress = got / total;
+            notifyListeners();
+          }
+        }
+      } finally {
+        await sink.close();
+      }
+      if (total > 0 && got < total) throw Exception(tr('Download unvollständig'));
+    } finally {
+      c.close(force: true);
     }
   }
 
@@ -104,25 +182,21 @@ class Updater extends ChangeNotifier {
     if (await dir.exists()) await dir.delete(recursive: true);
     await dir.create(recursive: true);
     final f = File('${dir.path}${Platform.pathSeparator}${u.assetName}');
-    final c = HttpClient();
-    final req = await c.getUrl(Uri.parse(u.assetUrl));
-    req.headers.set(HttpHeaders.userAgentHeader, 'LR2021-Node-App/$appVersion');
-    final res = await req.close();
-    if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
-    final total = res.contentLength > 0 ? res.contentLength : u.size;
-    final sink = f.openWrite();
-    var got = 0;
-    await for (final chunk in res) {
-      sink.add(chunk);
-      got += chunk.length;
-      if (total > 0) {
-        progress = got / total;
-        notifyListeners();
+    final urls = [u.assetUrl, u.mirrorUrl].where((x) => x.isNotEmpty).toList();
+    Object? last;
+    for (final url in urls) {
+      try {
+        await _fetch(url, f, u.size);
+        if (u.sha256.isNotEmpty) {
+          final digest = crypto.sha256.convert(await f.readAsBytes()).toString();
+          if (digest.toLowerCase() != u.sha256.toLowerCase()) throw Exception(tr('Prüfsumme stimmt nicht'));
+        }
+        return f;
+      } catch (e) {
+        last = e;
       }
     }
-    await sink.close();
-    c.close();
-    return f;
+    throw last ?? Exception(tr('Download fehlgeschlagen'));
   }
 
   /// Update laden und installieren. Gibt Fehlertext oder null zurück.

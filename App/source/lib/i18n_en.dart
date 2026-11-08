@@ -705,4 +705,7 @@ const Map<String, String> enTexts = {
   'Deutsch': 'German',
   'Seite konnte nicht geöffnet werden: {0}': 'Could not open the page: {0}',
   'iPhone/iPad: Mit AltStore oder SideStore und der LR2021-Quelle kommen Updates automatisch. Sonst öffnet „Installieren“ die Download-Seite.': 'iPhone/iPad: with AltStore or SideStore and the LR2021 source, updates arrive automatically. Otherwise “Install” opens the download page.',
+  'Download unvollständig': 'Download incomplete',
+  'Prüfsumme stimmt nicht': 'Checksum does not match',
+  'Download fehlgeschlagen': 'Download failed',
 };

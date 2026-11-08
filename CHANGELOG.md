@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.6.3
+
+- Updates keep working when the GitHub API or the release downloads are disturbed: every release is
+  also published in the branch `dist` (reachable via raw.githubusercontent.com and jsDelivr); the app
+  falls back to it automatically and verifies every download with SHA-256
+- The AltStore/SideStore source moved to
+  `https://raw.githubusercontent.com/TheRaviolimeister/LR2021-Node/dist/altstore-source.json`
+
 ## 1.6.2
 
 - Radio: the receiver front-end calibration is now forced every time a modem is configured. Before, the
