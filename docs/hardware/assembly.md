@@ -1,5 +1,9 @@
 # Assembly and wiring
 
+> **Carrier board:** a ready-to-order PCB with exactly this wiring (plus input protection and ESP32
+> reset/boot control from the Pi) is in [hardware/carrier](../../hardware/carrier/README.md). The
+> tables below are the reference for both the PCB and a perfboard build.
+
 ![Wiring](wiring.svg)
 
 The diagram is generated from the tables below with `python3 wiring.py`. All signals use 3.3 V.

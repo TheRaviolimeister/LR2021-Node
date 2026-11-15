@@ -1,0 +1,284 @@
+{
+ "U1": {
+  "value": "ESP32-S3-DevKitC-1",
+  "lcsc": "",
+  "assemble": false,
+  "footprint": "ESP32-S3-DevKitC-1_Socket"
+ },
+ "U2": {
+  "value": "ESP32-S3-DevKitC-1",
+  "lcsc": "",
+  "assemble": false,
+  "footprint": "ESP32-S3-DevKitC-1_Socket"
+ },
+ "U3": {
+  "value": "Core2021-HF",
+  "lcsc": "",
+  "assemble": false,
+  "footprint": "Core2021_Socket"
+ },
+ "U4": {
+  "value": "Core2021-LF",
+  "lcsc": "",
+  "assemble": false,
+  "footprint": "Core2021_Socket"
+ },
+ "U5": {
+  "value": "Orange Pi Zero 2W",
+  "lcsc": "",
+  "assemble": false,
+  "footprint": "OrangePi_Zero2W_Socket"
+ },
+ "J5": {
+  "value": "USB4125-GF-A",
+  "lcsc": "C3151650",
+  "assemble": true,
+  "footprint": "USB_C_Receptacle_GCT_USB4125-xx-x_6P_TopMnt_Horizontal"
+ },
+ "J1": {
+  "value": "JST-XH 2p",
+  "lcsc": "C158012",
+  "assemble": false,
+  "footprint": "JST_XH_B2B-XH-A_1x02_P2.50mm_Vertical"
+ },
+ "R1": {
+  "value": "5.1k",
+  "lcsc": "C23186",
+  "assemble": true,
+  "footprint": "R_0603_1608Metric"
+ },
+ "R2": {
+  "value": "5.1k",
+  "lcsc": "C23186",
+  "assemble": true,
+  "footprint": "R_0603_1608Metric"
+ },
+ "Q1": {
+  "value": "AO3401A",
+  "lcsc": "C15127",
+  "assemble": true,
+  "footprint": "SOT-23"
+ },
+ "Q2": {
+  "value": "AO3401A",
+  "lcsc": "C15127",
+  "assemble": true,
+  "footprint": "SOT-23"
+ },
+ "R3": {
+  "value": "10k",
+  "lcsc": "C25804",
+  "assemble": true,
+  "footprint": "R_0603_1608Metric"
+ },
+ "F1": {
+  "value": "PTC 3A",
+  "lcsc": "C21004",
+  "assemble": true,
+  "footprint": "Fuse_1812_4532Metric"
+ },
+ "D1": {
+  "value": "SMBJ5.0A",
+  "lcsc": "C83333",
+  "assemble": true,
+  "footprint": "D_SMB"
+ },
+ "C1": {
+  "value": "22uF",
+  "lcsc": "C12891",
+  "assemble": true,
+  "footprint": "C_1206_3216Metric"
+ },
+ "C2": {
+  "value": "22uF",
+  "lcsc": "C12891",
+  "assemble": true,
+  "footprint": "C_1206_3216Metric"
+ },
+ "D4": {
+  "value": "LED red",
+  "lcsc": "C2286",
+  "assemble": true,
+  "footprint": "LED_0603_1608Metric"
+ },
+ "R4": {
+  "value": "1k",
+  "lcsc": "C21190",
+  "assemble": true,
+  "footprint": "R_0603_1608Metric"
+ },
+ "D2": {
+  "value": "SS34",
+  "lcsc": "C8678",
+  "assemble": true,
+  "footprint": "D_SMA"
+ },
+ "C3": {
+  "value": "10uF",
+  "lcsc": "C19702",
+  "assemble": true,
+  "footprint": "C_0603_1608Metric"
+ },
+ "D3": {
+  "value": "SS34",
+  "lcsc": "C8678",
+  "assemble": true,
+  "footprint": "D_SMA"
+ },
+ "C4": {
+  "value": "10uF",
+  "lcsc": "C19702",
+  "assemble": true,
+  "footprint": "C_0603_1608Metric"
+ },
+ "C5": {
+  "value": "10uF",
+  "lcsc": "C19702",
+  "assemble": true,
+  "footprint": "C_0603_1608Metric"
+ },
+ "C6": {
+  "value": "100nF",
+  "lcsc": "C14663",
+  "assemble": true,
+  "footprint": "C_0603_1608Metric"
+ },
+ "C7": {
+  "value": "10uF",
+  "lcsc": "C19702",
+  "assemble": true,
+  "footprint": "C_0603_1608Metric"
+ },
+ "C8": {
+  "value": "100nF",
+  "lcsc": "C14663",
+  "assemble": true,
+  "footprint": "C_0603_1608Metric"
+ },
+ "Q3": {
+  "value": "2N7002",
+  "lcsc": "C8545",
+  "assemble": true,
+  "footprint": "SOT-23"
+ },
+ "Q4": {
+  "value": "2N7002",
+  "lcsc": "C8545",
+  "assemble": true,
+  "footprint": "SOT-23"
+ },
+ "Q5": {
+  "value": "2N7002",
+  "lcsc": "C8545",
+  "assemble": true,
+  "footprint": "SOT-23"
+ },
+ "Q6": {
+  "value": "2N7002",
+  "lcsc": "C8545",
+  "assemble": true,
+  "footprint": "SOT-23"
+ },
+ "R11": {
+  "value": "1k",
+  "lcsc": "C21190",
+  "assemble": true,
+  "footprint": "R_0603_1608Metric"
+ },
+ "R15": {
+  "value": "100k",
+  "lcsc": "C25803",
+  "assemble": true,
+  "footprint": "R_0603_1608Metric"
+ },
+ "R12": {
+  "value": "1k",
+  "lcsc": "C21190",
+  "assemble": true,
+  "footprint": "R_0603_1608Metric"
+ },
+ "R16": {
+  "value": "100k",
+  "lcsc": "C25803",
+  "assemble": true,
+  "footprint": "R_0603_1608Metric"
+ },
+ "R13": {
+  "value": "1k",
+  "lcsc": "C21190",
+  "assemble": true,
+  "footprint": "R_0603_1608Metric"
+ },
+ "R17": {
+  "value": "100k",
+  "lcsc": "C25803",
+  "assemble": true,
+  "footprint": "R_0603_1608Metric"
+ },
+ "R14": {
+  "value": "1k",
+  "lcsc": "C21190",
+  "assemble": true,
+  "footprint": "R_0603_1608Metric"
+ },
+ "R18": {
+  "value": "100k",
+  "lcsc": "C25803",
+  "assemble": true,
+  "footprint": "R_0603_1608Metric"
+ },
+ "R5": {
+  "value": "1k",
+  "lcsc": "C21190",
+  "assemble": true,
+  "footprint": "R_0603_1608Metric"
+ },
+ "R6": {
+  "value": "1k",
+  "lcsc": "C21190",
+  "assemble": true,
+  "footprint": "R_0603_1608Metric"
+ },
+ "R7": {
+  "value": "1k",
+  "lcsc": "C21190",
+  "assemble": true,
+  "footprint": "R_0603_1608Metric"
+ },
+ "R8": {
+  "value": "1k",
+  "lcsc": "C21190",
+  "assemble": true,
+  "footprint": "R_0603_1608Metric"
+ },
+ "R9": {
+  "value": "1k",
+  "lcsc": "C21190",
+  "assemble": true,
+  "footprint": "R_0603_1608Metric"
+ },
+ "R10": {
+  "value": "1k",
+  "lcsc": "C21190",
+  "assemble": true,
+  "footprint": "R_0603_1608Metric"
+ },
+ "J2": {
+  "value": "JST-XH 5p",
+  "lcsc": "C157991",
+  "assemble": false,
+  "footprint": "JST_XH_B5B-XH-A_1x05_P2.50mm_Vertical"
+ },
+ "J3": {
+  "value": "1x3 2.54",
+  "lcsc": "",
+  "assemble": false,
+  "footprint": "PinHeader_1x03_P2.54mm_Vertical"
+ },
+ "J4": {
+  "value": "1x4 2.54",
+  "lcsc": "",
+  "assemble": false,
+  "footprint": "PinHeader_1x04_P2.54mm_Vertical"
+ }
+}

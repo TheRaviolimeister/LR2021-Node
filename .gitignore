@@ -30,3 +30,7 @@ App/source/.metadata
 App/source/.flutter-plugins*
 App/source/pubspec.lock
 App/source/*.iml
+
+# carrier board: keep the manufacturing files
+!hardware/carrier/fabrication/*.zip
+hardware/carrier/gen.log

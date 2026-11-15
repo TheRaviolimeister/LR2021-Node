@@ -18,7 +18,8 @@ USB or a serial cable.
 | CP2102 | serial console / cable connection to the PC app |
 
 Full part list: [docs/hardware/parts-list.md](docs/hardware/parts-list.md) ·
-assembly and wiring: [docs/hardware/assembly.md](docs/hardware/assembly.md)
+assembly and wiring: [docs/hardware/assembly.md](docs/hardware/assembly.md) ·
+carrier PCB (ready to order): [hardware/carrier](hardware/carrier/README.md)
 
 ## Software
 
@@ -49,6 +50,7 @@ The app enforces the legal power limits for the license-free bands.
 
 - Part list: [docs/hardware/parts-list.md](docs/hardware/parts-list.md)
 - Assembly and wiring: [docs/hardware/assembly.md](docs/hardware/assembly.md)
+- Carrier PCB (KiCad, Gerber, BOM): [hardware/carrier](hardware/carrier/README.md)
 - ESP32 firmware: [docs/firmware.md](docs/firmware.md)
 - Node software (SD card): [docs/node.md](docs/node.md)
 - App: [docs/app.md](docs/app.md)

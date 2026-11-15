@@ -36,6 +36,11 @@ locked by default.
 
 ## Assembly material
 
+Either the **carrier board** (recommended, see [hardware/carrier](../../hardware/carrier/README.md):
+order the PCB with SMD assembly, then solder the headers and connectors listed in
+`hardware/carrier/fabrication/hand-solder.csv`) or a perfboard with point-to-point wiring:
+
+
 | Qty | Part | Note |
 |---:|---|---|
 | 1 | perfboard 100 × 150 mm, 2.54 mm pitch | carrier for everything |
