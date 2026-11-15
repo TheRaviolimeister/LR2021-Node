@@ -1,7 +1,7 @@
 {
     "$schema": "https://schemas.kicad.org/drc.v1.json",
     "coordinate_units": "mm",
-    "date": "2026-11-15T13:59:59+0100",
+    "date": "2026-11-15T16:34:37+0100",
     "included_severities": [
         "error",
         "warning"
@@ -12,412 +12,15 @@
     "unconnected_items": [],
     "violations": [
         {
-            "description": "Silkscreen overlap",
-            "items": [
-                {
-                    "description": "PCB text 'RXD' on F.Silkscreen",
-                    "pos": {
-                        "x": 88.6,
-                        "y": 90.54
-                    },
-                    "uuid": "5ac8ff88-090f-4d20-8156-883fc3db6f27"
-                },
-                {
-                    "description": "Segment of J3 on F.Silkscreen",
-                    "pos": {
-                        "x": 89.62,
-                        "y": 89.27
-                    },
-                    "uuid": "626c3c3b-c909-4a15-aa1f-e1382fafe5e4"
-                }
-            ],
-            "severity": "warning",
-            "type": "silk_overlap"
-        },
-        {
-            "description": "Silkscreen overlap",
-            "items": [
-                {
-                    "description": "Segment of J3 on F.Silkscreen",
-                    "pos": {
-                        "x": 89.62,
-                        "y": 89.27
-                    },
-                    "uuid": "626c3c3b-c909-4a15-aa1f-e1382fafe5e4"
-                },
-                {
-                    "description": "PCB text 'TXD' on F.Silkscreen",
-                    "pos": {
-                        "x": 88.6,
-                        "y": 93.08
-                    },
-                    "uuid": "e46206fe-73fd-4377-a1b0-510137a0e505"
-                }
-            ],
-            "severity": "warning",
-            "type": "silk_overlap"
-        },
-        {
-            "description": "Silkscreen overlap",
-            "items": [
-                {
-                    "description": "Segment of J3 on F.Silkscreen",
-                    "pos": {
-                        "x": 89.62,
-                        "y": 88.0
-                    },
-                    "uuid": "3a8ed5b2-829a-4a75-8cb5-ee85fe42bcce"
-                },
-                {
-                    "description": "PCB text 'GND' on F.Silkscreen",
-                    "pos": {
-                        "x": 88.6,
-                        "y": 88.0
-                    },
-                    "uuid": "96a34fbf-e602-4b4b-bc93-9c5948d07acb"
-                }
-            ],
-            "severity": "warning",
-            "type": "silk_overlap"
-        },
-        {
-            "description": "Silkscreen overlap",
-            "items": [
-                {
-                    "description": "PCB text 'SDA' on F.Silkscreen",
-                    "pos": {
-                        "x": 93.6,
-                        "y": 86.62
-                    },
-                    "uuid": "25476fb4-c02a-4a09-acf8-01ffa20f6ccb"
-                },
-                {
-                    "description": "Segment of J4 on F.Silkscreen",
-                    "pos": {
-                        "x": 94.62,
-                        "y": 80.27
-                    },
-                    "uuid": "f9d21b66-d52c-48ef-a656-c26a5925006e"
-                }
-            ],
-            "severity": "warning",
-            "type": "silk_overlap"
-        },
-        {
-            "description": "Silkscreen overlap",
-            "items": [
-                {
-                    "description": "PCB text 'VCC' on F.Silkscreen",
-                    "pos": {
-                        "x": 93.6,
-                        "y": 81.54
-                    },
-                    "uuid": "8527ef7f-2910-4c34-8b47-db819181add3"
-                },
-                {
-                    "description": "Segment of J4 on F.Silkscreen",
-                    "pos": {
-                        "x": 94.62,
-                        "y": 80.27
-                    },
-                    "uuid": "f9d21b66-d52c-48ef-a656-c26a5925006e"
-                }
-            ],
-            "severity": "warning",
-            "type": "silk_overlap"
-        },
-        {
-            "description": "Silkscreen overlap",
-            "items": [
-                {
-                    "description": "PCB text 'SCL' on F.Silkscreen",
-                    "pos": {
-                        "x": 93.6,
-                        "y": 84.08
-                    },
-                    "uuid": "d3558e40-2432-4acb-af12-180dc0863374"
-                },
-                {
-                    "description": "Segment of J4 on F.Silkscreen",
-                    "pos": {
-                        "x": 94.62,
-                        "y": 80.27
-                    },
-                    "uuid": "f9d21b66-d52c-48ef-a656-c26a5925006e"
-                }
-            ],
-            "severity": "warning",
-            "type": "silk_overlap"
-        },
-        {
-            "description": "Silkscreen overlap",
-            "items": [
-                {
-                    "description": "PCB text 'GND' on F.Silkscreen",
-                    "pos": {
-                        "x": 93.6,
-                        "y": 79.0
-                    },
-                    "uuid": "886e82dc-2566-4a1d-8084-1cc92b5be370"
-                },
-                {
-                    "description": "Segment of J4 on F.Silkscreen",
-                    "pos": {
-                        "x": 94.62,
-                        "y": 79.0
-                    },
-                    "uuid": "9a5de90f-3642-4b68-89a6-479461a90e76"
-                }
-            ],
-            "severity": "warning",
-            "type": "silk_overlap"
-        },
-        {
-            "description": "Silkscreen overlap",
-            "items": [
-                {
-                    "description": "Segment of C1 on F.Silkscreen",
-                    "pos": {
-                        "x": 84.91,
-                        "y": 32.211252
-                    },
-                    "uuid": "78e68a64-2c01-4f20-9626-9cc49011bfb0"
-                },
-                {
-                    "description": "Reference field of F1",
-                    "pos": {
-                        "x": 84.85,
-                        "y": 31.5
-                    },
-                    "uuid": "fe50e9e7-a9b9-469f-91d6-766b29e041c5"
-                }
-            ],
-            "severity": "warning",
-            "type": "silk_overlap"
-        },
-        {
-            "description": "Silkscreen overlap",
-            "items": [
-                {
-                    "description": "Reference field of C4",
-                    "pos": {
-                        "x": 81.07,
-                        "y": 8.5
-                    },
-                    "uuid": "2d2614b2-85d6-4e56-89a4-f5c0425e3918"
-                },
-                {
-                    "description": "Segment of U2 on F.Silkscreen",
-                    "pos": {
-                        "x": 80.5,
-                        "y": 0.66
-                    },
-                    "uuid": "9065a658-029a-454b-935e-f0a6d8a1a379"
-                }
-            ],
-            "severity": "warning",
-            "type": "silk_overlap"
-        },
-        {
-            "description": "Silkscreen overlap",
-            "items": [
-                {
-                    "description": "PCB text '+' on F.Silkscreen",
-                    "pos": {
-                        "x": 98.6,
-                        "y": 27.5
-                    },
-                    "uuid": "0055587d-25c6-4489-87d7-039744636e0b"
-                },
-                {
-                    "description": "Segment of J1 on F.Silkscreen",
-                    "pos": {
-                        "x": 98.75,
-                        "y": 29.3
-                    },
-                    "uuid": "04389530-38be-4bca-88d7-54d14c61cdd6"
-                }
-            ],
-            "severity": "warning",
-            "type": "silk_overlap"
-        },
-        {
-            "description": "Silkscreen overlap",
-            "items": [
-                {
-                    "description": "Segment of Q1 on F.Silkscreen",
-                    "pos": {
-                        "x": 88.76,
-                        "y": 22.56
-                    },
-                    "uuid": "193492eb-eb24-4f09-8629-b7dc1da07ed6"
-                },
-                {
-                    "description": "Reference field of Q2",
-                    "pos": {
-                        "x": 88.0,
-                        "y": 23.1
-                    },
-                    "uuid": "4e9a383e-171d-42c0-9a36-6ba9a8075034"
-                }
-            ],
-            "severity": "warning",
-            "type": "silk_overlap"
-        },
-        {
-            "description": "Silkscreen overlap",
-            "items": [
-                {
-                    "description": "Reference field of R16",
-                    "pos": {
-                        "x": 31.57,
-                        "y": 42.0
-                    },
-                    "uuid": "1588d512-a6e6-4d36-b00e-fde5616ba680"
-                },
-                {
-                    "description": "Segment of U1 on F.Silkscreen",
-                    "pos": {
-                        "x": 31.0,
-                        "y": 0.66
-                    },
-                    "uuid": "bfb7ca0d-3e20-4945-ae21-445bb0c37d7c"
-                }
-            ],
-            "severity": "warning",
-            "type": "silk_overlap"
-        },
-        {
-            "description": "Silkscreen overlap",
-            "items": [
-                {
-                    "description": "Reference field of R15",
-                    "pos": {
-                        "x": 31.57,
-                        "y": 55.5
-                    },
-                    "uuid": "02a3ab9c-f71b-4d35-885f-0657e326337a"
-                },
-                {
-                    "description": "Segment of U1 on F.Silkscreen",
-                    "pos": {
-                        "x": 31.0,
-                        "y": 0.66
-                    },
-                    "uuid": "bfb7ca0d-3e20-4945-ae21-445bb0c37d7c"
-                }
-            ],
-            "severity": "warning",
-            "type": "silk_overlap"
-        },
-        {
-            "description": "Silkscreen overlap",
-            "items": [
-                {
-                    "description": "Segment of D2 on F.Silkscreen",
-                    "pos": {
-                        "x": 13.49,
-                        "y": 13.65
-                    },
-                    "uuid": "4c398a10-3e3d-489f-8041-7eb6ab2476db"
-                },
-                {
-                    "description": "Reference field of C3",
-                    "pos": {
-                        "x": 17.0,
-                        "y": 14.07
-                    },
-                    "uuid": "863ad2cc-5c22-48de-94b7-25194a1c0386"
-                }
-            ],
-            "severity": "warning",
-            "type": "silk_overlap"
-        },
-        {
-            "description": "Silkscreen clipped by solder mask",
-            "items": [
-                {
-                    "description": "Segment of U1 on F.Silkscreen",
-                    "pos": {
-                        "x": 2.4,
-                        "y": 63.7
-                    },
-                    "uuid": "b0487afe-1c31-4c85-a610-4556d537c148"
-                }
-            ],
-            "severity": "warning",
-            "type": "silk_over_copper"
-        },
-        {
-            "description": "Text height out of range (board setup constraints silk text height min height 0.8000 mm; actual 0.7000 mm)",
-            "items": [
-                {
-                    "description": "Footprint text of U4 (2.4G)",
-                    "pos": {
-                        "x": 88.99,
-                        "y": 71.02
-                    },
-                    "uuid": "9be80d47-8905-4e0f-8550-11708b0e0fc5"
-                }
-            ],
-            "severity": "warning",
-            "type": "text_height"
-        },
-        {
-            "description": "Text height out of range (board setup constraints silk text height min height 0.8000 mm; actual 0.7000 mm)",
-            "items": [
-                {
-                    "description": "Footprint text of U4 (LoRa)",
-                    "pos": {
-                        "x": 88.99,
-                        "y": 80.22
-                    },
-                    "uuid": "e43bceb7-ec19-4226-83ee-cab90962cb09"
-                }
-            ],
-            "severity": "warning",
-            "type": "text_height"
-        },
-        {
-            "description": "Text height out of range (board setup constraints silk text height min height 0.8000 mm; actual 0.7000 mm)",
-            "items": [
-                {
-                    "description": "Footprint text of U3 (2.4G)",
-                    "pos": {
-                        "x": 45.62,
-                        "y": 26.49
-                    },
-                    "uuid": "34e9ece7-3965-4507-81d6-9d1344c40482"
-                }
-            ],
-            "severity": "warning",
-            "type": "text_height"
-        },
-        {
-            "description": "Text height out of range (board setup constraints silk text height min height 0.8000 mm; actual 0.7000 mm)",
-            "items": [
-                {
-                    "description": "Footprint text of U3 (LoRa)",
-                    "pos": {
-                        "x": 36.42,
-                        "y": 26.49
-                    },
-                    "uuid": "9e4eddbf-206b-4006-a90f-9513353de7b4"
-                }
-            ],
-            "severity": "warning",
-            "type": "text_height"
-        },
-        {
             "description": "The current configuration does not include the footprint library 'LR2021'.",
             "items": [
                 {
-                    "description": "Footprint U2",
+                    "description": "Footprint U3",
                     "pos": {
-                        "x": 78.9,
-                        "y": 62.0
+                        "x": 51.0,
+                        "y": 20.5
                     },
-                    "uuid": "04a40614-3474-4440-a081-dd7952ba5553"
+                    "uuid": "198a9930-ef59-4213-97bb-c405a7c7b941"
                 }
             ],
             "severity": "warning",
@@ -429,25 +32,10 @@
                 {
                     "description": "Footprint U4",
                     "pos": {
-                        "x": 80.39,
-                        "y": 75.62
+                        "x": 105.0,
+                        "y": 29.0
                     },
-                    "uuid": "2ecca2d1-f38e-4351-a9dc-a93b035af3d9"
-                }
-            ],
-            "severity": "warning",
-            "type": "lib_footprint_issues"
-        },
-        {
-            "description": "The current configuration does not include the footprint library 'LR2021'.",
-            "items": [
-                {
-                    "description": "Footprint U5",
-                    "pos": {
-                        "x": 2.0,
-                        "y": 69.0
-                    },
-                    "uuid": "7816cbb8-f48b-4bf5-879f-dfa32283bd2a"
+                    "uuid": "2a1065f9-8c3c-4bc0-b012-bae393642153"
                 }
             ],
             "severity": "warning",
@@ -459,10 +47,10 @@
                 {
                     "description": "Footprint U1",
                     "pos": {
-                        "x": 29.4,
-                        "y": 62.0
+                        "x": 4.0,
+                        "y": 44.36
                     },
-                    "uuid": "c34e8f8b-9aca-4142-88fa-1324eb2b5e5d"
+                    "uuid": "5ae47815-6a13-477a-b658-495629d11000"
                 }
             ],
             "severity": "warning",
@@ -472,12 +60,27 @@
             "description": "The current configuration does not include the footprint library 'LR2021'.",
             "items": [
                 {
-                    "description": "Footprint U3",
+                    "description": "Footprint U5",
                     "pos": {
-                        "x": 41.02,
-                        "y": 17.89
+                        "x": 45.5,
+                        "y": 75.7
                     },
-                    "uuid": "e6e563e6-bfd7-4382-97fe-97d46b0154b1"
+                    "uuid": "94478a6e-9199-4209-9915-d8758bc06152"
+                }
+            ],
+            "severity": "warning",
+            "type": "lib_footprint_issues"
+        },
+        {
+            "description": "The current configuration does not include the footprint library 'LR2021'.",
+            "items": [
+                {
+                    "description": "Footprint U2",
+                    "pos": {
+                        "x": 126.6,
+                        "y": 44.36
+                    },
+                    "uuid": "a31a95a4-2e41-4aa8-9a62-19b953b11d3f"
                 }
             ],
             "severity": "warning",

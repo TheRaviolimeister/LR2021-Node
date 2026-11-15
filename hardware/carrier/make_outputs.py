@@ -78,6 +78,8 @@ for fp in board.GetFootprints():
         continue
     p = parts[ref]
     name = fp.GetFPID().GetLibItemName().wx_str()
+    if p["value"] == "DNP":      # optional pi-network places, not fitted
+        continue
     if not p["assemble"]:
         hand.setdefault((p["value"], name, p["lcsc"]), []).append(ref)
         continue

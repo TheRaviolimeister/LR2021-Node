@@ -29,6 +29,102 @@
   "assemble": false,
   "footprint": "OrangePi_Zero2W_Socket"
  },
+ "J13": {
+  "value": "BWSMA-KWE-Z001",
+  "lcsc": "C496551",
+  "assemble": true,
+  "footprint": "SMA_BAT_Wireless_BWSMA-KWE-Z001"
+ },
+ "J14": {
+  "value": "BWSMA-KWE-Z001",
+  "lcsc": "C496551",
+  "assemble": true,
+  "footprint": "SMA_BAT_Wireless_BWSMA-KWE-Z001"
+ },
+ "J15": {
+  "value": "BWSMA-KWE-Z001",
+  "lcsc": "C496551",
+  "assemble": true,
+  "footprint": "SMA_BAT_Wireless_BWSMA-KWE-Z001"
+ },
+ "J16": {
+  "value": "BWSMA-KWE-Z001",
+  "lcsc": "C496551",
+  "assemble": true,
+  "footprint": "SMA_BAT_Wireless_BWSMA-KWE-Z001"
+ },
+ "R21": {
+  "value": "0R",
+  "lcsc": "C21189",
+  "assemble": true,
+  "footprint": "R_0603_1608Metric"
+ },
+ "C9": {
+  "value": "DNP",
+  "lcsc": "",
+  "assemble": false,
+  "footprint": "C_0603_1608Metric"
+ },
+ "C10": {
+  "value": "DNP",
+  "lcsc": "",
+  "assemble": false,
+  "footprint": "C_0603_1608Metric"
+ },
+ "R22": {
+  "value": "0R",
+  "lcsc": "C21189",
+  "assemble": true,
+  "footprint": "R_0603_1608Metric"
+ },
+ "C11": {
+  "value": "DNP",
+  "lcsc": "",
+  "assemble": false,
+  "footprint": "C_0603_1608Metric"
+ },
+ "C12": {
+  "value": "DNP",
+  "lcsc": "",
+  "assemble": false,
+  "footprint": "C_0603_1608Metric"
+ },
+ "R23": {
+  "value": "0R",
+  "lcsc": "C21189",
+  "assemble": true,
+  "footprint": "R_0603_1608Metric"
+ },
+ "C13": {
+  "value": "DNP",
+  "lcsc": "",
+  "assemble": false,
+  "footprint": "C_0603_1608Metric"
+ },
+ "C14": {
+  "value": "DNP",
+  "lcsc": "",
+  "assemble": false,
+  "footprint": "C_0603_1608Metric"
+ },
+ "R24": {
+  "value": "0R",
+  "lcsc": "C21189",
+  "assemble": true,
+  "footprint": "R_0603_1608Metric"
+ },
+ "C15": {
+  "value": "DNP",
+  "lcsc": "",
+  "assemble": false,
+  "footprint": "C_0603_1608Metric"
+ },
+ "C16": {
+  "value": "DNP",
+  "lcsc": "",
+  "assemble": false,
+  "footprint": "C_0603_1608Metric"
+ },
  "J5": {
   "value": "USB4125-GF-A",
   "lcsc": "C3151650",
@@ -161,24 +257,6 @@
   "assemble": true,
   "footprint": "SOT-23"
  },
- "Q4": {
-  "value": "2N7002",
-  "lcsc": "C8545",
-  "assemble": true,
-  "footprint": "SOT-23"
- },
- "Q5": {
-  "value": "2N7002",
-  "lcsc": "C8545",
-  "assemble": true,
-  "footprint": "SOT-23"
- },
- "Q6": {
-  "value": "2N7002",
-  "lcsc": "C8545",
-  "assemble": true,
-  "footprint": "SOT-23"
- },
  "R11": {
   "value": "1k",
   "lcsc": "C21190",
@@ -190,6 +268,12 @@
   "lcsc": "C25803",
   "assemble": true,
   "footprint": "R_0603_1608Metric"
+ },
+ "Q4": {
+  "value": "2N7002",
+  "lcsc": "C8545",
+  "assemble": true,
+  "footprint": "SOT-23"
  },
  "R12": {
   "value": "1k",
@@ -203,6 +287,12 @@
   "assemble": true,
   "footprint": "R_0603_1608Metric"
  },
+ "Q5": {
+  "value": "2N7002",
+  "lcsc": "C8545",
+  "assemble": true,
+  "footprint": "SOT-23"
+ },
  "R13": {
   "value": "1k",
   "lcsc": "C21190",
@@ -214,6 +304,12 @@
   "lcsc": "C25803",
   "assemble": true,
   "footprint": "R_0603_1608Metric"
+ },
+ "Q6": {
+  "value": "2N7002",
+  "lcsc": "C8545",
+  "assemble": true,
+  "footprint": "SOT-23"
  },
  "R14": {
   "value": "1k",
@@ -263,6 +359,18 @@
   "assemble": true,
   "footprint": "R_0603_1608Metric"
  },
+ "R19": {
+  "value": "4.7k",
+  "lcsc": "C23162",
+  "assemble": true,
+  "footprint": "R_0603_1608Metric"
+ },
+ "R20": {
+  "value": "4.7k",
+  "lcsc": "C23162",
+  "assemble": true,
+  "footprint": "R_0603_1608Metric"
+ },
  "J2": {
   "value": "JST-XH 5p",
   "lcsc": "C157991",
@@ -280,5 +388,71 @@
   "lcsc": "",
   "assemble": false,
   "footprint": "PinHeader_1x04_P2.54mm_Vertical"
+ },
+ "J12": {
+  "value": "1x4 2.54",
+  "lcsc": "",
+  "assemble": false,
+  "footprint": "PinHeader_1x04_P2.54mm_Vertical"
+ },
+ "J6": {
+  "value": "SM04B-SRSS-TB",
+  "lcsc": "C160404",
+  "assemble": true,
+  "footprint": "JST_SH_SM04B-SRSS-TB_1x04-1MP_P1.00mm_Horizontal"
+ },
+ "J7": {
+  "value": "SM04B-SRSS-TB",
+  "lcsc": "C160404",
+  "assemble": true,
+  "footprint": "JST_SH_SM04B-SRSS-TB_1x04-1MP_P1.00mm_Horizontal"
+ },
+ "J8": {
+  "value": "SM04B-SRSS-TB",
+  "lcsc": "C160404",
+  "assemble": true,
+  "footprint": "JST_SH_SM04B-SRSS-TB_1x04-1MP_P1.00mm_Horizontal"
+ },
+ "J9": {
+  "value": "SM04B-SRSS-TB",
+  "lcsc": "C160404",
+  "assemble": true,
+  "footprint": "JST_SH_SM04B-SRSS-TB_1x04-1MP_P1.00mm_Horizontal"
+ },
+ "J10": {
+  "value": "SM04B-SRSS-TB",
+  "lcsc": "C160404",
+  "assemble": true,
+  "footprint": "JST_SH_SM04B-SRSS-TB_1x04-1MP_P1.00mm_Horizontal"
+ },
+ "J11": {
+  "value": "SM04B-SRSS-TB",
+  "lcsc": "C160404",
+  "assemble": true,
+  "footprint": "JST_SH_SM04B-SRSS-TB_1x04-1MP_P1.00mm_Horizontal"
+ },
+ "J17": {
+  "value": "SM04B-SRSS-TB",
+  "lcsc": "C160404",
+  "assemble": true,
+  "footprint": "JST_SH_SM04B-SRSS-TB_1x04-1MP_P1.00mm_Horizontal"
+ },
+ "J18": {
+  "value": "SM04B-SRSS-TB",
+  "lcsc": "C160404",
+  "assemble": true,
+  "footprint": "JST_SH_SM04B-SRSS-TB_1x04-1MP_P1.00mm_Horizontal"
+ },
+ "J19": {
+  "value": "SM04B-SRSS-TB",
+  "lcsc": "C160404",
+  "assemble": true,
+  "footprint": "JST_SH_SM04B-SRSS-TB_1x04-1MP_P1.00mm_Horizontal"
+ },
+ "J20": {
+  "value": "SM04B-SRSS-TB",
+  "lcsc": "C160404",
+  "assemble": true,
+  "footprint": "JST_SH_SM04B-SRSS-TB_1x04-1MP_P1.00mm_Horizontal"
  }
 }

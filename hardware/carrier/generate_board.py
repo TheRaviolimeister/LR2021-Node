@@ -24,8 +24,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, "lr2021-carrier.kicad_pcb")
 LIB = "/usr/share/kicad/footprints"
 
-VERSION = "1.0"
-BOARD_W, BOARD_H = 100.0, 100.0
+VERSION = "1.1"
+BOARD_W, BOARD_H = 156.0, 106.0
 
 MM = pcbnew.FromMM
 
@@ -183,11 +183,15 @@ def core_socket(ref, value):
         x = 8.89 - k * 2.54
         tht_pad(fp, k + 1, x, -7.62, square=(k == 0))
         tht_pad(fp, k + 9, x, 7.62, square=(k == 0))
-    silk_rect(fp, -11.0, -9.5, 11.0, 9.5)
+    # module outline as corner marks only (the RF lines leave the socket across the outline)
+    for sx in (-1,):          # no marks at the antenna end, the RF lines leave the socket there
+        for sy in (-1, 1):
+            silk_line(fp, sx * 11.0, sy * 9.225, sx * 10.2, sy * 9.225)
+            silk_line(fp, sx * 11.0, sy * 9.225, sx * 11.0, sy * 8.625)
     fp_text(fp, value, -1.5, 0.0, 1.2)
     fp_text(fp, "ANT", 8.6, -2.3, 0.8)
-    fp_text(fp, "2.4G", 8.6, -4.6, 0.7)
-    fp_text(fp, "LoRa", 8.6, 4.6, 0.7)
+    fp_text(fp, "2.4G", 8.6, -4.6, 0.8)
+    fp_text(fp, "LoRa", 8.6, 4.6, 0.8)
     return fp
 
 
@@ -251,81 +255,150 @@ def place(fp, x, y, rot=0, value=None, lcsc="", assemble=True):
     return fp
 
 
-DK_Y1 = 62.0                     # y of pin 1 of both DevKits
-u1 = place(devkit_socket("U1", "ESP32 A (868 MHz)"), 29.4, DK_Y1, assemble=False)
-u2 = place(devkit_socket("U2", "ESP32 B (433 MHz)"), 78.9, DK_Y1, assemble=False)
-# Core2021-HF, rotated 90° clockwise: LoRa row (SPI) on the left facing ESP32 A, antenna end at bottom
-u3 = place(core_socket("U3", "Core2021-HF"), 41.02, 17.89, rot=-90, assemble=False)
-# Core2021-LF, original orientation: antenna end on the right towards the board edge
-u4 = place(core_socket("U4", "Core2021-LF"), 80.39, 75.62, assemble=False)
-u5 = place(pi_socket("U5"), 2.0, 69.0, assemble=False)
+# ---- placement / nets (carrier v1.1). Coordinates in mm, origin top left, y down. Antenna edge = top.
+X_DKA, X_DKB = 4.0, 126.6        # J1 pin column of ESP32 A / B (both rotated 180 deg: USB at the bottom edge)
+Y_DK = BOARD_H - 61.64           # y of J1 pin 1 (3V3) of both DevKits
+u1 = place(devkit_socket("U1", "ESP32 A (868 MHz)"), X_DKA, Y_DK, rot=180, assemble=False)
+u2 = place(devkit_socket("U2", "ESP32 B (433 MHz)"), X_DKB, Y_DK, rot=180, assemble=False)
+# Core2021-HF: antenna end down, LoRa row left, 2.4 GHz row right
+CX_HF, CY_HF = 51.0, 20.5
+u3 = place(core_socket("U3", "Core2021-HF"), CX_HF, CY_HF, rot=-90, assemble=False)
+# Core2021-LF: antenna end up, 2.4 GHz row left, LoRa row right
+CX_LF, CY_LF = 105.0, 29.0
+u4 = place(core_socket("U4", "Core2021-LF"), CX_LF, CY_LF, rot=90, assemble=False)
+# Orange Pi Zero 2W centred at the bottom edge, ports to the edge
+PI_X, PI_Y = BOARD_W / 2 - 32.5, BOARD_H - 30.3
+u5 = place(pi_socket("U5"), PI_X, PI_Y, assemble=False)
 
 R0603 = ("Resistor_SMD", "R_0603_1608Metric")
 C0603 = ("Capacitor_SMD", "C_0603_1608Metric")
 
 
-def smd(ref, value, lib, x, y, rot=0, lcsc=""):
-    return place(lib_fp(ref, value, *lib), x, y, rot, value, lcsc)
+def smd(ref, value, lib, x, y, rot=0, lcsc="", assemble=True):
+    return place(lib_fp(ref, value, *lib), x, y, rot, value, lcsc, assemble)
 
 
-# power input
+# ---- antenna connectors (SMA, 90 deg, through hole) along the top edge ----
+SMA = ("Connector_Coaxial", "SMA_BAT_Wireless_BWSMA-KWE-Z001")
+SMA_Y = 4.1
+ANT = {   # ref: (x, label)
+    "J13": (CX_HF - 11.62, "868 LoRa"),
+    "J14": (CX_HF + 11.62, "2.4G HF"),
+    "J15": (BOARD_W - (CX_HF + 11.62), "2.4G LF"),
+    "J16": (BOARD_W - (CX_HF - 11.62), "433 LoRa"),
+}
+for ref, (x, label) in ANT.items():
+    place(lib_fp(ref, "SMA " + label, *SMA), x, SMA_Y, 0, "BWSMA-KWE-Z001", "C496551")
+
+# RF lines (50 ohm grounded coplanar waveguide) as point lists from the module pin to the SMA pin.
+# Each line has a pi network near the SMA: shunt (not fitted) - series 0 ohm - shunt (not fitted).
+RF_W, RF_GAP = 1.55, 0.30
+PI_SH_SMA, PI_SER, PI_SH_MOD = 12.5, 15.1, 17.7      # y of the pi-network parts
+hf_bot = CY_HF + 8.89
+lf_top = CY_LF - 8.89
+RF_LINES = {
+    # name: (points, side of the shunt parts)
+    "RF_HF_LORA": ([(CX_HF - 7.62, hf_bot), (CX_HF - 10.12, hf_bot), (CX_HF - 11.62, hf_bot - 1.5),
+                    (CX_HF - 11.62, SMA_Y)], -1),
+    "RF_HF_24": ([(CX_HF + 7.62, hf_bot), (CX_HF + 10.12, hf_bot), (CX_HF + 11.62, hf_bot - 1.5),
+                  (CX_HF + 11.62, SMA_Y)], +1),
+    "RF_LF_24": ([(CX_LF - 7.62, lf_top), (CX_LF - 7.62, 11.61), (ANT["J15"][0], 7.61),
+                  (ANT["J15"][0], SMA_Y)], -1),
+    "RF_LF_LORA": ([(CX_LF + 7.62, lf_top), (CX_LF + 7.62, 11.61), (ANT["J16"][0], 7.61),
+                    (ANT["J16"][0], SMA_Y)], +1),
+}
+PI_PARTS = {}   # line name -> (series ref, shunt module side ref, shunt sma side ref)
+rser, csh = 21, 9
+for name, (pts, side) in RF_LINES.items():
+    xs = [a[0] for a, b in zip(pts, pts[1:]) if abs(a[0] - b[0]) < 1e-6 and min(a[1], b[1]) <= PI_SH_SMA - 0.6
+          and max(a[1], b[1]) >= PI_SH_MOD + 0.6]
+    assert xs, name
+    x = xs[0]
+    rs, c1, c2 = f"R{rser}", f"C{csh}", f"C{csh + 1}"
+    smd(rs, "0R", R0603, x, PI_SER, 90, "C21189")
+    smd(c1, "DNP", C0603, x + side * 0.8, PI_SH_MOD, 0 if side > 0 else 180, assemble=False)
+    smd(c2, "DNP", C0603, x + side * 0.8, PI_SH_SMA, 0 if side > 0 else 180, assemble=False)
+    PI_PARTS[name] = (rs, c1, c2)
+    rser += 1
+    csh += 2
+
+# ---- power input (top left): USB-C (power only) or JST-XH from the battery shield ----
 j5 = place(lib_fp("J5", "USB-C power", "Connector_USB", "USB_C_Receptacle_GCT_USB4125-xx-x_6P_TopMnt_Horizontal"),
-           BOARD_W - 3.2, 12.0, rot=90, value="USB4125-GF-A", lcsc="C3151650")
+           3.2, 24.0, rot=-90, value="USB4125-GF-A", lcsc="C3151650")
 j1 = place(lib_fp("J1", "5V IN", "Connector_JST", "JST_XH_B2B-XH-A_1x02_P2.50mm_Vertical"),
-           96.0, 27.5, rot=90, value="JST-XH 2p", lcsc="C158012", assemble=False)
-smd("R1", "5.1k", R0603, 91.0, 8.0, 90, "C23186")
-smd("R2", "5.1k", R0603, 91.0, 16.0, 90, "C23186")
-smd("Q1", "AO3401A", ("Package_TO_SOT_SMD", "SOT-23"), 88.0, 21.0, 0, "C15127")
-smd("Q2", "AO3401A", ("Package_TO_SOT_SMD", "SOT-23"), 88.0, 25.5, 0, "C15127")
-smd("R3", "10k", R0603, 84.5, 23.0, 90, "C25804")
-smd("F1", "PTC 3A", ("Fuse", "Fuse_1812_4532Metric"), 87.5, 31.5, 90, "C21004")
-smd("D1", "SMBJ5.0A", ("Diode_SMD", "D_SMB"), 92.3, 34.75, 90, "C83333")
-smd("C1", "22uF", ("Capacitor_SMD", "C_1206_3216Metric"), 84.0, 31.5, 90, "C12891")
-smd("C2", "22uF", ("Capacitor_SMD", "C_1206_3216Metric"), 84.0, 36.5, 90, "C12891")
-smd("D4", "LED red", ("LED_SMD", "LED_0603_1608Metric"), 89.0, 40.5, 0, "C2286")
-smd("R4", "1k", R0603, 85.5, 40.5, 0, "C21190")
+           5.0, 37.0, rot=0, value="JST-XH 2p", lcsc="C158012", assemble=False)
+smd("R1", "5.1k", R0603, 9.5, 19.0, 90, "C23186")
+smd("R2", "5.1k", R0603, 9.5, 29.0, 90, "C23186")
+smd("Q1", "AO3401A", ("Package_TO_SOT_SMD", "SOT-23"), 15.0, 22.0, 0, "C15127")
+smd("Q2", "AO3401A", ("Package_TO_SOT_SMD", "SOT-23"), 15.0, 30.0, 0, "C15127")
+smd("R3", "10k", R0603, 19.5, 26.0, 90, "C25804")
+smd("F1", "PTC 3A", ("Fuse", "Fuse_1812_4532Metric"), 23.0, 14.0, 0, "C21004")
+smd("D1", "SMBJ5.0A", ("Diode_SMD", "D_SMB"), 29.0, 20.0, 90, "C83333")
+smd("C1", "22uF", ("Capacitor_SMD", "C_1206_3216Metric"), 25.0, 26.0, 90, "C12891")
+smd("C2", "22uF", ("Capacitor_SMD", "C_1206_3216Metric"), 29.0, 28.5, 90, "C12891")
+smd("D4", "LED red", ("LED_SMD", "LED_0603_1608Metric"), 26.0, 34.0, 0, "C2286")
+smd("R4", "1k", R0603, 22.5, 34.0, 0, "C21190")
 # ESP 5 V feed (blocks back-feeding from a PC on the ESP32 USB port)
-smd("D2", "SS34", ("Diode_SMD", "D_SMA"), 17.0, 12.0, 0, "C8678")
-smd("C3", "10uF", C0603, 17.0, 15.5, 0, "C19702")
-smd("D3", "SS34", ("Diode_SMD", "D_SMA"), 86.0, 4.5, 180, "C8678")
-smd("C4", "10uF", C0603, 82.5, 8.5, 90, "C19702")
-# LR2021 decoupling (under the modules)
-smd("C5", "10uF", C0603, 37.0, 13.0, 0, "C19702")
-smd("C6", "100nF", C0603, 37.0, 15.5, 0, "C14663")
-smd("C7", "10uF", C0603, 76.0, 79.0, 90, "C19702")
-smd("C8", "100nF", C0603, 78.5, 79.0, 90, "C14663")
-# ESP reset / boot control from the Pi
-smd("Q3", "2N7002", ("Package_TO_SOT_SMD", "SOT-23"), 35.5, 52.0, 0, "C8545")
-smd("Q4", "2N7002", ("Package_TO_SOT_SMD", "SOT-23"), 35.5, 38.0, 0, "C8545")
-smd("Q5", "2N7002", ("Package_TO_SOT_SMD", "SOT-23"), 84.0, 57.0, 0, "C8545")
-smd("Q6", "2N7002", ("Package_TO_SOT_SMD", "SOT-23"), 48.0, 38.0, 180, "C8545")
-smd("R11", "1k", R0603, 39.0, 55.0, 90, "C21190")
-smd("R15", "100k", R0603, 33.0, 55.5, 90, "C25803")
-smd("R12", "1k", R0603, 39.0, 42.0, 90, "C21190")
-smd("R16", "100k", R0603, 33.0, 42.0, 90, "C25803")
-smd("R13", "1k", R0603, 87.5, 60.0, 90, "C21190")
-smd("R17", "100k", R0603, 84.0, 61.0, 0, "C25803")
-smd("R14", "1k", R0603, 45.0, 42.0, 90, "C21190")
-smd("R18", "100k", R0603, 50.5, 42.0, 90, "C25803")
+smd("D2", "SS34", ("Diode_SMD", "D_SMA"), 36.5, 84.0, 90, "C8678")
+smd("C3", "10uF", C0603, 40.5, 84.0, 90, "C19702")
+smd("D3", "SS34", ("Diode_SMD", "D_SMA"), BOARD_W - 36.5, 84.0, 90, "C8678")
+smd("C4", "10uF", C0603, BOARD_W - 40.5, 84.0, 90, "C19702")
+# LR2021 decoupling (between the socket rows, close to the 3V3 pin)
+smd("C5", "10uF", C0603, CX_HF + 4.5, CY_HF - 7.5, 90, "C19702")
+smd("C6", "100nF", C0603, CX_HF + 2.0, CY_HF - 7.5, 90, "C14663")
+smd("C7", "10uF", C0603, CX_LF - 4.5, CY_LF + 7.5, 90, "C19702")
+smd("C8", "100nF", C0603, CX_LF - 2.0, CY_LF + 7.5, 90, "C14663")
+# ESP reset / boot control from the Pi (Q3/Q4 = ESP32 A, Q5/Q6 = ESP32 B)
+smd("Q3", "2N7002", ("Package_TO_SOT_SMD", "SOT-23"), 37.0, 50.0, 0, "C8545")
+smd("R11", "1k", R0603, 41.0, 50.0, 90, "C21190")
+smd("R15", "100k", R0603, 37.0, 54.0, 0, "C25803")
+smd("Q4", "2N7002", ("Package_TO_SOT_SMD", "SOT-23"), 37.0, 62.0, 0, "C8545")
+smd("R12", "1k", R0603, 41.0, 62.0, 90, "C21190")
+smd("R16", "100k", R0603, 37.0, 66.0, 0, "C25803")
+smd("Q5", "2N7002", ("Package_TO_SOT_SMD", "SOT-23"), BOARD_W - 37.0, 50.0, 0, "C8545")
+smd("R13", "1k", R0603, BOARD_W - 41.0, 50.0, 90, "C21190")
+smd("R17", "100k", R0603, BOARD_W - 37.0, 54.0, 0, "C25803")
+smd("Q6", "2N7002", ("Package_TO_SOT_SMD", "SOT-23"), BOARD_W - 37.0, 62.0, 0, "C8545")
+smd("R14", "1k", R0603, BOARD_W - 41.0, 62.0, 90, "C21190")
+smd("R18", "100k", R0603, BOARD_W - 37.0, 66.0, 0, "C25803")
 # UART series resistors (protect both sides when only one of them has power)
-smd("R5", "1k", R0603, 42.0, 60.0, 0, "C21190")
-smd("R6", "1k", R0603, 42.0, 62.5, 0, "C21190")
-smd("R7", "1k", R0603, 46.5, 48.0, 90, "C21190")
-smd("R8", "1k", R0603, 49.0, 48.0, 90, "C21190")
-smd("R9", "1k", R0603, 20.0, 66.5, 0, "C21190")
-smd("R10", "1k", R0603, 24.0, 66.5, 0, "C21190")
-# connectors on the right edge
+smd("R5", "1k", R0603, 36.0, 72.0, 0, "C21190")
+smd("R6", "1k", R0603, 40.0, 72.0, 0, "C21190")
+smd("R7", "1k", R0603, BOARD_W - 40.0, 72.0, 0, "C21190")
+smd("R8", "1k", R0603, BOARD_W - 36.0, 72.0, 0, "C21190")
+smd("R9", "1k", R0603, 130.0, 38.0, 0, "C21190")
+smd("R10", "1k", R0603, 134.0, 38.0, 0, "C21190")
+# I2C pull-ups to 3.3 V
+smd("R19", "4.7k", R0603, BOARD_W / 2 - 18.0, PI_Y - 4.0, 0, "C23162")
+smd("R20", "4.7k", R0603, BOARD_W / 2 - 14.0, PI_Y - 4.0, 0, "C23162")
+
+# ---- connectors (top right): GPS, console, I2C pin headers ----
 j2 = place(lib_fp("J2", "GPS", "Connector_JST", "JST_XH_B5B-XH-A_1x05_P2.50mm_Vertical"),
-           96.0, 52.0, rot=90, value="JST-XH 5p", lcsc="C157991", assemble=False)
+           BOARD_W - 4.0, 26.0, rot=90, value="JST-XH 5p", lcsc="C157991", assemble=False)
 j3 = place(lib_fp("J3", "CONSOLE", "Connector_PinHeader_2.54mm", "PinHeader_1x03_P2.54mm_Vertical"),
-           91.0, 88.0, rot=0, value="1x3 2.54", assemble=False)
-j4 = place(lib_fp("J4", "I2C", "Connector_PinHeader_2.54mm", "PinHeader_1x04_P2.54mm_Vertical"),
-           96.0, 79.0, rot=0, value="1x4 2.54", assemble=False)
+           BOARD_W - 3.5, 31.0, rot=0, value="1x3 2.54", assemble=False)
+HDR4 = ("Connector_PinHeader_2.54mm", "PinHeader_1x04_P2.54mm_Vertical")
+j4 = place(lib_fp("J4", "I2C", *HDR4), 132.0, 15.0, rot=0, value="1x4 2.54", assemble=False)
+j12 = place(lib_fp("J12", "I2C", *HDR4), 139.0, 15.0, rot=0, value="1x4 2.54", assemble=False)
+
+# ---- I2C expansion: Qwiic / STEMMA QT sockets (JST SH 4-pin: GND, 3V3, SDA, SCL), one shared bus ----
+SH = ("Connector_JST", "JST_SH_SM04B-SRSS-TB_1x04-1MP_P1.00mm_Horizontal")
+QWIIC = [("J6", 12.5, 3.4, 180), ("J7", 21.5, 3.4, 180), ("J8", 30.5, 3.4, 180),        # top edge, left
+         ("J9", 125.5, 3.4, 180), ("J10", 134.5, 3.4, 180), ("J11", 143.5, 3.4, 180),  # top edge, right
+         ("J17", 38.25, BOARD_H - 3.4, 0), ("J18", BOARD_W - 38.25, BOARD_H - 3.4, 0),  # bottom edge
+         ("J19", 70.0, 44.0, 0), ("J20", 86.0, 44.0, 0)]                                 # centre
+for ref, x, y, r in QWIIC:
+    place(lib_fp(ref, "Qwiic", *SH), x, y, r, "SM04B-SRSS-TB", "C160404")
+QWIIC_REFS = [q[0] for q in QWIIC]
+
+# references of the pi-network parts and the parts under the radio modules stay off the silkscreen
+for _r in [x for t in PI_PARTS.values() for x in t] + ["C5", "C6", "C7", "C8"]:
+    parts[_r][0].Reference().SetVisible(False)
 
 mount_hole("H1", 3.5, 3.5)
-mount_hole("H2", 96.5, 3.0)
-mount_hole("H3", 96.5, 96.5)
-mount_hole("H4", 70.0, 96.5)
+mount_hole("H2", BOARD_W - 3.5, 3.5)
+mount_hole("H3", 38.25, BOARD_H - 12.0)
+mount_hole("H4", BOARD_W - 38.25, BOARD_H - 12.0)
 
 # ----------------------------------------------------------------------------------------------
 # Nets
@@ -342,7 +415,7 @@ NETS = {
     "+5V_ESPB": ["D3.1", "C4.1", "U2.21"],
     "+3V3_A": ["U1.1", "U1.2", "U3.8", "C5.1", "C6.1"],
     "+3V3_B": ["U2.1", "U2.2", "U4.8", "C7.1", "C8.1"],
-    "+3V3_PI": ["U5.1", "U5.17", "J2.1", "J4.2"],
+    "+3V3_PI": ["U5.1", "U5.17", "J2.1", "J4.2", "J12.2", "R19.1", "R20.1"] + [r + ".2" for r in QWIIC_REFS],
     "EN_A": ["U1.3", "Q3.3"], "IO0_A": ["U1.36", "Q4.3"],
     "EN_B": ["U2.3", "Q5.3"], "IO0_B": ["U2.36", "Q6.3"],
     "PI_ENA": ["U5.29", "R11.1"], "G_ENA": ["R11.2", "Q3.1", "R15.1"],
@@ -356,7 +429,8 @@ NETS = {
     "PI_TX0": ["U5.8", "R9.1"], "CON_TXD": ["R9.2", "J3.2"],
     "CON_RXD": ["J3.3", "R10.1"], "PI_RX0": ["R10.2", "U5.10"],
     "GPS_TX": ["J2.3", "U5.13"], "GPS_RX": ["J2.4", "U5.11"], "GPS_PPS": ["J2.5", "U5.15"],
-    "I2C_SCL": ["J4.3", "U5.5"], "I2C_SDA": ["J4.4", "U5.3"],
+    "I2C_SCL": ["J4.3", "U5.5", "J12.3", "R20.2"] + [r + ".4" for r in QWIIC_REFS],
+    "I2C_SDA": ["J4.4", "U5.3", "J12.4", "R19.2"] + [r + ".3" for r in QWIIC_REFS],
     # ESP32 A <-> Core2021-HF   (U1 pad n = J1 pin n; GPIO: 4..7 -> pads 4..7, 15..18 -> 8..11, 8 -> 12, 9 -> 15)
     "CS_A": ["U1.10", "U3.11"], "SCK_A": ["U1.9", "U3.12"], "MOSI_A": ["U1.8", "U3.13"],
     "MISO_A": ["U1.7", "U3.14"], "NRST_A": ["U1.6", "U3.15"], "BUSY_A": ["U1.5", "U3.16"],
@@ -370,8 +444,19 @@ NETS = {
             "Q3.2", "Q4.2", "Q5.2", "Q6.2", "R15.2", "R16.2", "R17.2", "R18.2",
             "U5.6", "U5.9", "U5.14", "U5.20", "U5.25", "U5.30", "U5.34", "U5.39",
             "U1.22", "U1.23", "U1.43", "U1.44", "U2.22", "U2.23", "U2.43", "U2.44",
-            "U3.2", "U3.7", "U3.10", "U4.2", "U4.7", "U4.10", "J2.2", "J3.1", "J4.1"],
+            "U3.2", "U3.7", "U3.10", "U4.2", "U4.7", "U4.10", "J2.2", "J3.1", "J4.1", "J12.1"]
+           + [r + ".1" for r in QWIIC_REFS] + [r + ".MP" for r in QWIIC_REFS]
+           + [r + ".2" for r in ANT],
 }
+# RF nets: module pin -> shunt 1 -> series 0R -> shunt 2 -> SMA centre pin
+RF_PIN = {"RF_HF_LORA": ("U3.9", "J13"), "RF_HF_24": ("U3.1", "J14"),
+          "RF_LF_24": ("U4.1", "J15"), "RF_LF_LORA": ("U4.9", "J16")}
+for name, (modpin, sma) in RF_PIN.items():
+    rs, c1, c2 = PI_PARTS[name]
+    NETS[name + "_M"] = [modpin, c1 + ".1", rs + ".1"]
+    NETS[name + "_S"] = [rs + ".2", c2 + ".1", sma + ".1"]
+    NETS["GND"] += [c1 + ".2", c2 + ".2"]
+RF_NETS = [n for n in NETS if n.startswith("RF_")]
 
 WIDTH = {"VIN": 0.8, "VIN_P": 1.0, "+5V": 1.0, "+5V_ESPA": 0.6, "+5V_ESPB": 0.6,
          "+3V3_A": 0.5, "+3V3_B": 0.5, "+3V3_PI": 0.4}
@@ -388,9 +473,15 @@ for name, members in NETS.items():
         for p in found:
             p.SetNet(n)
 
-for ref in ("U1", "U2", "U3", "U4", "U5"):
-    for p in fps[ref].Pads():
-        if p.GetNetname() == "GND":
+# solid plane connection for the socket pins and all small SMD ground pads (thermal spokes would be
+# starved between the neighbouring pins); the SMA connectors and the power jacks keep thermals
+for fp_ in board.GetFootprints():
+    ref_ = fp_.GetReference()
+    for p in fp_.Pads():
+        if p.GetNetname() != "GND":
+            continue
+        if ref_ in ("U1", "U2", "U3", "U4", "U5", "J2", "J3", "J4", "J12") or \
+                p.GetAttribute() == pcbnew.PAD_ATTRIB_SMD:
             p.SetLocalZoneConnection(pcbnew.ZONE_CONNECTION_FULL)
 
 # board outline
@@ -511,7 +602,7 @@ def astar(sources, targets, blk, via_ok, tcenter):
                 s = came[s]
             return path[::-1]
         n += 1
-        if n > 900000:
+        if n > 2500000:
             return None
         L, j, i = s
         for di, dj, c in MOVES:
@@ -649,8 +740,137 @@ def net_len(name):
     return (max(xs) - min(xs)) + (max(ys) - min(ys)) if pins else 0
 
 
+# ---- RF lines: drawn directly (not routed), 50 ohm grounded coplanar waveguide with via fence ----
+def seg_mask(a, b, r):
+    """Cells within r mm of segment a-b."""
+    (x1, y1), (x2, y2) = a, b
+    dx, dy = x2 - x1, y2 - y1
+    L2 = dx * dx + dy * dy
+    i0, i1 = max(0, int((min(x1, x2) - r) / G) - 1), min(NX - 1, int((max(x1, x2) + r) / G) + 2)
+    j0, j1 = max(0, int((min(y1, y2) - r) / G) - 1), min(NY - 1, int((max(y1, y2) + r) / G) + 2)
+    m = np.zeros((NY, NX), dtype=bool)
+    px, py = XS[j0:j1, i0:i1], YS[j0:j1, i0:i1]
+    t = np.clip(((px - x1) * dx + (py - y1) * dy) / L2, 0, 1) if L2 > 0 else 0
+    d2 = (px - (x1 + t * dx)) ** 2 + (py - (y1 + t * dy)) ** 2
+    m[j0:j1, i0:i1] = d2 <= r * r
+    return m
+
+
+def pt_seg(px, py, a, b):
+    """Distance of point (px, py) from segment a-b."""
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    L2 = dx * dx + dy * dy
+    t = max(0.0, min(1.0, ((px - a[0]) * dx + (py - a[1]) * dy) / L2)) if L2 else 0.0
+    return math.hypot(px - a[0] - t * dx, py - a[1] - t * dy)
+
+
+rf_tracks, rf_vias = [], []
+gid_rf = net_ids["GND"]
+keep = RF_W / 2 + RF_GAP + 0.75          # nothing but ground within this distance of the line centre
+fence_off = RF_W / 2 + RF_GAP + 0.45     # via fence: centre distance from the line centre
+for name, (pts, side) in RF_LINES.items():
+    rs = PI_PARTS[name][0]
+    ser = fps[rs].GetPosition()
+    sy = pcbnew.ToMM(ser.y)
+    # split the polyline at the series resistor: module side net _M, SMA side net _S
+    for (a, b) in zip(pts, pts[1:]):
+        segs = [(a, b)]
+        if abs(a[0] - b[0]) < 1e-6 and min(a[1], b[1]) < sy < max(a[1], b[1]):
+            top, bot = (a, b) if a[1] < b[1] else (b, a)
+            segs = [(bot, (bot[0], sy + 1.225)), ((top[0], sy - 1.225), top)]
+        for (p, q) in segs:
+            sma_side = max(p[1], q[1]) <= sy
+            nid = net_ids[name + ("_S" if sma_side else "_M")]
+            rf_tracks.append((nid, RF_W, F, p, q))
+            band = seg_mask(p, q, keep)
+            for L in (F, B):
+                occ[L][band & (occ[L] == 0)] = -1
+            core = seg_mask(p, q, RF_W / 2 + 0.065)
+            occ[F][core & (occ[F] <= 0)] = nid
+    # via fence on both sides of every segment
+    for (a, b) in zip(pts, pts[1:]):
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        ln = math.hypot(dx, dy)
+        ux, uy = dx / ln, dy / ln
+        nx_, ny_ = -uy, ux
+        n_steps = int(ln / 1.8)
+        for k in range(n_steps + 1):
+            t = k / max(n_steps, 1)
+            cx, cy = a[0] + dx * t, a[1] + dy * t
+            for sgn in (-1, 1):
+                vx, vy = cx + sgn * nx_ * fence_off, cy + sgn * ny_ * fence_off
+                i, j = int(round(vx / G)), int(round(vy / G))
+                if not (0 < i < NX - 1 and 0 < j < NY - 1):
+                    continue
+                near = (XS - vx) ** 2 + (YS - vy) ** 2 <= (0.3 + 0.2) ** 2
+                if (padmask & near).any() or viamask[j, i] or emask[j, i]:
+                    continue
+                # keep away from every other RF line
+                if any(pt_seg(vx, vy, p, q) < RF_W / 2 + RF_GAP + 0.3
+                       for (pp, _s) in RF_LINES.values() for (p, q) in zip(pp, pp[1:])):
+                    continue
+                rf_vias.append((gid_rf, (vx, vy), 0.6, 0.3))
+                viamask[(XS - vx) ** 2 + (YS - vy) ** 2 <= 1.0 ** 2] = True
+                for L in (F, B):
+                    occ[L][near & (occ[L] <= 0)] = gid_rf
+print(f"RF: {len(rf_tracks)} segments, {len(rf_vias)} fence vias", flush=True)
+# ---- every SMD ground pad gets its own via to the bottom plane, placed before routing ----
+pad_vias = 0
+via_r = 0.3
+for fp_ in board.GetFootprints():
+    for p in fp_.Pads():
+        if p.GetNetname() != "GND" or p.GetAttribute() != pcbnew.PAD_ATTRIB_SMD:
+            continue
+        c = p.GetPosition()
+        px, py = pcbnew.ToMM(c.x), pcbnew.ToMM(c.y)
+        sx, sy = pcbnew.ToMM(p.GetSize().x), pcbnew.ToMM(p.GetSize().y)
+        own = pad_cells(p, 0.09)
+        best = None
+        for d in np.arange(math.hypot(sx, sy) / 2 + 0.55, math.hypot(sx, sy) / 2 + 2.6, 0.2):
+            for k in range(24):
+                a = 2 * math.pi * k / 24
+                vx, vy = float(px + d * math.cos(a)), float(py + d * math.sin(a))
+                i, j = int(round(vx / G)), int(round(vy / G))
+                if not (2 < i < NX - 3 and 2 < j < NY - 3) or viamask[j, i] or emask[j, i]:
+                    continue
+                vd = (XS - vx) ** 2 + (YS - vy) ** 2 <= (via_r + CLEAR + 0.05) ** 2
+                if (padmask & vd & ~own).any():
+                    continue
+                if any(((occ[L][vd] != 0) & (occ[L][vd] != gid_rf)).any() for L in (F, B)):
+                    continue
+                tm = seg_mask((px, py), (vx, vy), 0.2 + CLEAR + 0.05)
+                if ((occ[F][tm & ~own] != 0) & (occ[F][tm & ~own] != gid_rf)).any():
+                    continue
+                best = (vx, vy)
+                break
+            if best:
+                break
+        if not best:
+            print("  no pad via for", fp_.GetReference(), p.GetNumber(), flush=True)
+            continue
+        vx, vy = best
+        rf_vias.append((gid_rf, (vx, vy), 0.6, 0.3))
+        rf_tracks.append((gid_rf, 0.4, F, (px, py), (vx, vy)))
+        viamask[(XS - vx) ** 2 + (YS - vy) ** 2 <= 1.0 ** 2] = True
+        vd = (XS - vx) ** 2 + (YS - vy) ** 2 <= (via_r + 0.065) ** 2
+        for L in (F, B):
+            occ[L][vd & (occ[L] == 0)] = gid_rf
+        tm = seg_mask((px, py), (vx, vy), 0.2 + 0.065)
+        occ[F][tm & (occ[F] == 0)] = gid_rf
+        pad_vias += 1
+print(f"ground: {pad_vias} pad vias", flush=True)
+
+if os.environ.get("PLACE_ONLY"):
+    # quick placement check: board with RF lines only
+    for nid, w, L, a, b in rf_tracks:
+        t = pcbnew.PCB_TRACK(board)
+        t.SetStart(V(*a)); t.SetEnd(V(*b)); t.SetWidth(MM(w))
+        t.SetLayer(pcbnew.F_Cu); t.SetNet(nets[id_names[nid]]); board.Add(t)
+    board.Save(OUT)
+    sys.exit(0)
+
 order_file = os.path.join(HERE, ".route_order.json")
-order = [n for n in NETS if n != "GND"]
+order = [n for n in NETS if n != "GND" and n not in RF_NETS]
 order.sort(key=lambda n: (0 if n in WIDTH else 1, net_len(n)))
 if os.path.exists(order_file):
     saved = json.load(open(order_file))
@@ -673,6 +893,8 @@ for attempt in range(3):
         break
     order = failed + [n for n in order if n not in failed]
 json.dump(order, open(order_file, "w"))
+tracks.extend(rf_tracks)
+vias.extend(rf_vias)
 
 # ground as a routed tree as well (the planes alone cannot reach every pad between the tracks)
 WIDTH["GND"] = 0.4
@@ -683,7 +905,7 @@ print("stage: ground", flush=True)
 gid = net_ids["GND"]
 vblk = blocked_for(gid, 0.3 + CLEAR + 0.05)
 via_ok = ~vblk[F] & ~vblk[B] & ~padmask & ~viamask
-step = int(6.0 / G)
+step = int(5.0 / G)
 grid_vias = 0
 for j in range(step // 2, NY, step):
     for i in range(step // 2, NX, step):
@@ -735,23 +957,29 @@ for layer in (pcbnew.F_Cu, pcbnew.B_Cu):
 print("stage: labels", flush=True)
 
 # board labels
-board_text(f"LR2021 Node carrier v{VERSION}", 34.5, 86.5, 1.3)
-board_text("by Raviolimeister (RAV1805)", 34.5, 88.7, 0.9)
-board_text("GPL-3.0 / CERN-OHL-S-2.0", 34.5, 90.5, 0.8)
-board_text("5V IN: USB-C or J1", 78.5, 88.5, 0.8)
-board_text("only ONE source at a time", 78.5, 90.0, 0.8)
-board_text("+", 98.6, 27.5, 1.0)
+board_text(f"LR2021 Node carrier v{VERSION}", BOARD_W / 2, PI_Y + 17.0, 1.3)
+board_text("by Raviolimeister (RAV1805)", BOARD_W / 2, PI_Y + 19.2, 0.9)
+board_text("GPL-3.0 / CERN-OHL-S-2.0", BOARD_W / 2, PI_Y + 21.0, 0.8)
+board_text("5V IN: USB-C or J1 (+ left)", 21.5, 38.6, 0.8)
+board_text("only ONE source at a time", 21.5, 40.1, 0.8)
+# antenna connectors
+for ref, (x, label) in ANT.items():
+    pts, side = RF_LINES[{"J13": "RF_HF_LORA", "J14": "RF_HF_24", "J15": "RF_LF_24", "J16": "RF_LF_LORA"}[ref]]
+    board_text("ANT " + label, x + side * 4.2, 21.0 if ref in ("J13", "J14") else 15.5, 0.8, angle=90)
 # connector pin labels (= pin names of the device that plugs in)
-for txt, y in (("3V3", 52.0), ("GND", 49.5), ("TX", 47.0), ("RX", 44.5), ("PPS", 42.0)):
-    board_text(txt, 91.3, y, 0.8)
-board_text("GPS", 91.3, 54.6, 0.9)
-for txt, y in (("GND", 79.0), ("VCC", 81.54), ("SCL", 84.08), ("SDA", 86.62)):
-    board_text(txt, 93.6, y, 0.8)
-board_text("I2C", 96.0, 76.8, 0.9)
-for txt, y in (("GND", 88.0), ("RXD", 90.54), ("TXD", 93.08)):
-    board_text(txt, 88.6, y, 0.8)
-board_text("CONSOLE", 91.0, 95.6, 0.9)
-board_text("JLCJLCJLCJLC", 50.0, 96.0, 1.0, layer=pcbnew.B_SilkS)
+for k, txt in enumerate(("3V3", "GND", "TX", "RX", "PPS")):
+    board_text(txt, BOARD_W - 8.7, 26.0 - k * 2.5, 0.8)
+board_text("GPS", BOARD_W - 8.7, 28.6, 0.9)
+for k, txt in enumerate(("GND", "VCC", "SCL", "SDA")):
+    board_text(txt, 135.5, 15.0 + k * 2.54, 0.8)
+board_text("I2C 3.3V", 135.5, 11.8, 0.8)
+for k, txt in enumerate(("GND", "RXD", "TXD")):
+    board_text(txt, BOARD_W - 6.6, 31.0 + k * 2.54, 0.8)
+board_text("CONSOLE", BOARD_W - 5.5, 39.0, 0.8)
+board_text("I2C 3.3V", 21.5, 8.3, 0.8)
+board_text("I2C 3.3V", 134.5, 8.3, 0.8)
+board_text("I2C 3.3V", 78.0, 44.0, 0.8)
+board_text("JLCJLCJLCJLC", BOARD_W / 2, PI_Y + 24.0, 1.0, layer=pcbnew.B_SilkS)
 
 print("stage: save", flush=True)
 board.Save(OUT)
@@ -761,6 +989,23 @@ filled = pcbnew.LoadBoard(OUT)
 filled.BuildConnectivity()
 filler = pcbnew.ZONE_FILLER(filled)
 filler.Fill(filled.Zones())
+# drop ground vias that ended up outside both planes (e.g. squeezed between two header rows)
+dead = []
+for t in filled.GetTracks():
+    if t.GetClass() == "PCB_VIA" and t.GetNetname() == "GND":
+        pos = t.GetPosition()
+        if not any(z.GetFilledPolysList(L).Contains(pos) for z in filled.Zones()
+                   for L in (pcbnew.F_Cu, pcbnew.B_Cu) if z.IsOnLayer(L)):
+            if not any(tr.GetClass() != "PCB_VIA" and (tr.GetStart() == pos or tr.GetEnd() == pos)
+                       for tr in filled.GetTracks()):
+                dead.append(t)
+for t in dead:
+    filled.Remove(t)
+if dead:
+    print(f"removed {len(dead)} unconnected ground vias", flush=True)
+    filled.BuildConnectivity()
+    filler = pcbnew.ZONE_FILLER(filled)
+    filler.Fill(filled.Zones())
 filled.Save(OUT)
 
 # netlist for documentation

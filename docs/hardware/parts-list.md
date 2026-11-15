@@ -20,9 +20,13 @@ the names are chosen so you can search for them directly.
 
 | Qty | Part | Note |
 |---:|---|---|
-| 1 | 868 MHz antenna | for the Core2021-HF, connector matching the module (pigtail if needed) |
-| 1 | 433 MHz antenna (70 cm) | for the Core2021-LF |
-| 2 | 2.4 GHz antenna | optional; without antennas 2.4 GHz stays locked |
+| 1 | 868 MHz antenna, SMA | for the Core2021-HF |
+| 1 | 433 MHz antenna (70 cm), SMA | for the Core2021-LF |
+| 2 | 2.4 GHz antenna, SMA | optional; without antennas 2.4 GHz stays locked |
+
+The carrier board has four SMA connectors (90°) on its top edge. On a perfboard build, connect the
+antennas to the IPEX sockets of the modules with pigtails, or wire the module pins as described in
+[hardware/carrier](../../hardware/carrier/README.md#radio-modules-antenna-signal-on-the-pins).
 
 **Never transmit without an antenna.** The firmware only transmits on command; the 2.4 GHz bands are
 locked by default.
