@@ -46,7 +46,7 @@ USB data lines have a fixed fan-out (0.5 mm pin pitch).
     outer one). A matched line of this length does not radiate and loses well below 0.2 dB.
   - **Filter places:** every RF line has a π network close to the connector: the series 0 Ω
     resistor is fitted, the two shunt places (0603) stay empty. A low-pass or matching network can
-    be added later. External cavity filters screw directly onto the SMA connector.
+    be added later (see "RF filters" below).
 - **Ten Qwiic / STEMMA QT sockets plus two 4-pin headers for I²C peripherals** (display, buttons,
   switches, sensors, I/O expanders). All of them are on the same bus: Orange Pi pins 3 (SDA) and
   5 (SCL), 4.7 kΩ pull-ups to 3.3 V. **3.3 V only:** do not connect modules that pull SDA/SCL up
@@ -59,7 +59,8 @@ USB data lines have a fixed fan-out (0.5 mm pin pitch).
   is switched on. The console connector has no supply pin.
 - **ESP32 reset and boot from the Orange Pi:** the Pi can pull EN and GPIO0 of each ESP32 low via
   a MOSFET (Pi pins 29/31 = EN/GPIO0 of ESP32 A, pins 32/33 = EN/GPIO0 of ESP32 B; high = pulled
-  low). Pull-down resistors keep the ESP32 running while the Pi boots.
+  low). 10 kΩ pull-down resistors keep the MOSFETs off (ESP32 running) while the Pi boots or the
+  Pi pins are not configured.
 - **LR2021 DIO7 and DIO8** are connected to GPIO8 and GPIO9 of both ESP32 (not used by the
   current firmware, reserved).
 - **USB console on the board:** USB-C J21 ("USB CONSOLE") with a CH340C USB serial converter and
@@ -69,7 +70,8 @@ USB data lines have a fixed fan-out (0.5 mm pin pitch).
   - The CH340C runs from the node's 3.3 V, the 5 V of the PC is not used at all (WCH self-powered
     mode). No current can flow between PC and node through the data lines, and the PC cannot feed
     the node. The COM port therefore only appears while the node is switched on.
-  - Windows 10/11 installs the CH340 driver automatically (otherwise: WCH "CH341SER").
+  - Windows 10/11 installs the CH340 driver automatically (otherwise: WCH "CH341SER"); Linux and
+    Android (USB-OTG) support it out of the box. The app recognises it as the node console.
 - **Console adapter connector:** J3 (GND, RXD, TXD) for an external USB serial adapter such as the
   CP2102 module, in parallel to the on-board converter. Use only one of them at a time. Connect only
   GND, RXD and TXD of the adapter, not its 3.3 V / 5 V pin.
@@ -78,6 +80,34 @@ USB data lines have a fixed fan-out (0.5 mm pin pitch).
 - **Mounting holes:** M3 in the two top corners and two under the USB ends of the ESP32 sockets
   (mount the board before plugging in the ESP32). Orange Pi pin 6 (GND) is not connected on the
   carrier – it is connected to the other GND pins inside the Pi.
+
+## RF filters
+
+There is deliberately no filter fitted on the board:
+
+- **868 MHz and 433 MHz:** the SMD filters that can be assembled (SAW filters) are made for a single
+  channel (e.g. 868.3 MHz, too narrow for Meshtastic at 869.525 MHz), lose about 3 dB in both
+  directions and are not rated for the 22 dBm transmit power. Against strong signals next to the band
+  (e.g. LTE 800 below 868 MHz) the right part is an **external cavity filter** screwed onto the SMA
+  connector (typically < 1 dB loss, > 40 dB rejection).
+- **2.4 GHz:** an LTCC band-pass filter (e.g. Murata LFB182G45SG9B740, 0.7 dB, 500 mW) would fit, but
+  it passes 2400–2500 MHz only and would cut off the 13 cm amateur band below 2400 MHz.
+- The π networks allow a low-pass filter for transmitter harmonics if a measurement ever shows the
+  need (3rd order Butterworth, 50 Ω: 868 MHz: 3.3 pF – 15 nH – 3.3 pF, 433 MHz: 5.6 pF – 27 nH –
+  5.6 pF; C0G capacitors, high-Q wire-wound inductors).
+
+## Checks of the design
+
+`check_board.py` and the design rule check cover:
+
+- every connection against the pin names of the modules and parts (ESP32-S3-DevKitC-1, Core2021,
+  Orange Pi Zero 2W header from the vendor's pin table, firmware pin numbers, CH340C, USBLC6-2SC6,
+  USB-C receptacle, MOSFETs, diodes – all taken from the data sheets);
+- no net with only one connection, no short, all nets connected, minimum distance between parts;
+- RF lines: 48.5–51.9 Ω for the JLCPCB 1.6 mm stack-up (εr 4.2–4.8), ground plane continuous under
+  and beside the lines (gaps only at the connector and module pins), via fence ≤ λ/40, no other
+  track closer than 2.4 mm;
+- supply: 5 V path to the Orange Pi 58 mΩ (≈ 0.09 V at 1.5 A), 1.6 mm wide.
 
 ## Radio modules: antenna signal on the pins
 

@@ -397,7 +397,7 @@ class NodeApp extends ChangeNotifier {
     try {
       s.ports = await listUsbPorts();
       if (s.kind == TransportKind.node) {
-        // Node-Kabel: beide Modems über denselben CP2102
+        // Node-Kabel: beide Modems über dieselbe Konsole
         if (s.port == null || !s.ports.any((p) => p.id == s.port!.id)) {
           s.port = s.ports.where((p) => p.cp210x).firstOrNull ?? s.ports.firstOrNull;
         }
@@ -471,7 +471,7 @@ class NodeApp extends ChangeNotifier {
           break;
         case TransportKind.node:
           final p = s.port;
-          if (p == null) throw Exception(tr('Kein Anschluss gewählt. Kabel vom CP2102 (Node-Konsole) anstecken und „Suchen“ drücken.'));
+          if (p == null) throw Exception(tr('Kein Anschluss gewählt. USB-Kabel der Node-Konsole anstecken und „Suchen“ drücken.'));
           s.status = tr('melde mich an der Node an …');
           notifyListeners();
           NodeSerialLink.user = settings.nodeUser;

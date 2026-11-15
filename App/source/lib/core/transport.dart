@@ -37,7 +37,11 @@ class PortChoice {
   const PortChoice(this.id, this.label, {this.looksLikeEsp = false, this.cp210x = false, this.handle});
 }
 
-bool _isEspVid(int? vid) => vid == 0x1A86 || vid == 0x303A || vid == 0x10C4;
+/// USB serial converter of the node console: CP210x (cable/module) or CH340/CH341 (USB-C on the carrier board).
+bool _isConsole(int? vid, int? pid) => vid == 0x10C4 || (vid == 0x1A86 && (pid == 0x7523 || pid == 0x5523));
+
+/// USB port of an ESP32 board: native USB (Espressif), CH343 or CP210x on the DevKit.
+bool _isEspVid(int? vid, int? pid) => vid == 0x303A || (vid == 0x1A86 && pid == 0x55D3) || vid == 0x10C4;
 
 Future<List<PortChoice>> listUsbPorts() async {
   if (Platform.isIOS) return const [];
@@ -47,8 +51,8 @@ Future<List<PortChoice>> listUsbPorts() async {
         .map((d) => PortChoice(
               '${d.deviceId}',
               '${d.productName ?? tr('USB-Gerät')}  ${(d.vid ?? 0).toRadixString(16).padLeft(4, '0')}:${(d.pid ?? 0).toRadixString(16).padLeft(4, '0')}',
-              looksLikeEsp: _isEspVid(d.vid),
-              cp210x: d.vid == 0x10C4,
+              looksLikeEsp: _isEspVid(d.vid, d.pid),
+              cp210x: _isConsole(d.vid, d.pid),
               handle: d,
             ))
         .toList();
@@ -61,12 +65,14 @@ Future<List<PortChoice>> listUsbPorts() async {
     try {
       final p = SerialPort(name);
       final desc = p.description;
-      int? vid;
+      int? vid, pid;
       try {
         vid = p.vendorId;
+        pid = p.productId;
       } catch (_) {}
-      esp = _isEspVid(vid);
-      cp = vid == 0x10C4 || (desc ?? '').toUpperCase().contains('CP210');
+      esp = _isEspVid(vid, pid);
+      final d = (desc ?? '').toUpperCase();
+      cp = _isConsole(vid, pid) || d.contains('CP210') || d.contains('CH340');
       if (desc != null && desc.isNotEmpty) label = '$name  ·  $desc';
       p.dispose();
     } catch (_) {}

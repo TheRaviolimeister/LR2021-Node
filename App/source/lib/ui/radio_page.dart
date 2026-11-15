@@ -154,7 +154,7 @@ class _ConnectBox extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.only(top: 8),
             child: Text(
-              tr('Kabel vom PC zum CP2102 der Node (Debug-Konsole). Die App meldet sich an der Node an (Benutzer/Passwort unter Einstellungen → Verbindung) und verbindet ESP32 A und B zusammen, dazu das GPS der Node. Kein Konsolen-Programm (PuTTY, Skript) darf den Anschluss gleichzeitig offen haben.'),
+              tr('Kabel vom PC zur Konsole der Node (USB-C „USB CONSOLE“ auf der Trägerplatine oder CP2102-Modul). Die App meldet sich an der Node an (Benutzer/Passwort unter Einstellungen → Verbindung) und verbindet ESP32 A und B zusammen, dazu das GPS der Node. Kein Konsolen-Programm (PuTTY, Skript) darf den Anschluss gleichzeitig offen haben.'),
               style: TextStyle(color: rc.muted, fontSize: 12.5),
             ),
           ),

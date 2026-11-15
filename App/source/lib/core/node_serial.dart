@@ -5,7 +5,7 @@ import 'dart:typed_data';
 import 'transport.dart';
 import '../i18n.dart';
 
-/// Verbindung zur Node über das Konsolen-Kabel (CP2102 am Pi, 115200 Baud).
+/// Verbindung zur Node über das Konsolen-Kabel (CH340 der Trägerplatine oder CP2102, 115200 Baud).
 /// Die App meldet sich an der Linux-Konsole an und startet /opt/lr2021/serialbridge.py.
 /// Danach laufen beide Modems (Kanal 1 = A, 2 = B) und das GPS (Kanal 3) über diese eine Leitung:
 ///   [Kanal] [COBS-Rahmen bzw. NMEA-Zeile] 0x00     Steuerung: Kanal 0x7F ('P' Ping, 'G' GPS, 'Q' Ende)
@@ -109,7 +109,7 @@ class NodeSerialLink {
           await send('\r');
           if (!await waitFor(() => tail().contains('login:') || RegExp(r'[#\$] ?$').hasMatch(tail().trimRight()),
               const Duration(seconds: 4))) {
-            throw Exception(tr('Keine Antwort von der Node-Konsole. Ist das Kabel am CP2102 und läuft der Pi?'));
+            throw Exception(tr('Keine Antwort von der Node-Konsole. Steckt das Konsolen-Kabel und läuft der Pi?'));
           }
           if (tail().contains('login:')) return await _restart(sub);
         }

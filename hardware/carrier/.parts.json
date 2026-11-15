@@ -264,8 +264,8 @@
   "footprint": "R_0603_1608Metric"
  },
  "R15": {
-  "value": "100k",
-  "lcsc": "C25803",
+  "value": "10k",
+  "lcsc": "C25804",
   "assemble": true,
   "footprint": "R_0603_1608Metric"
  },
@@ -282,8 +282,8 @@
   "footprint": "R_0603_1608Metric"
  },
  "R16": {
-  "value": "100k",
-  "lcsc": "C25803",
+  "value": "10k",
+  "lcsc": "C25804",
   "assemble": true,
   "footprint": "R_0603_1608Metric"
  },
@@ -300,8 +300,8 @@
   "footprint": "R_0603_1608Metric"
  },
  "R17": {
-  "value": "100k",
-  "lcsc": "C25803",
+  "value": "10k",
+  "lcsc": "C25804",
   "assemble": true,
   "footprint": "R_0603_1608Metric"
  },
@@ -318,8 +318,8 @@
   "footprint": "R_0603_1608Metric"
  },
  "R18": {
-  "value": "100k",
-  "lcsc": "C25803",
+  "value": "10k",
+  "lcsc": "C25804",
   "assemble": true,
   "footprint": "R_0603_1608Metric"
  },

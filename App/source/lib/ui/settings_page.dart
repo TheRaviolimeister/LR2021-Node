@@ -453,7 +453,7 @@ class _SettingsPageState extends State<SettingsPage> {
           Text(tr('Funk → Verbindung „Netzwerk (Pi)“. Ports 2021 (HF) und 2022 (LF).'),
               style: TextStyle(color: rc.muted, fontSize: 12)),
           const SizedBox(height: 16),
-          Text(tr('Node-Kabel (CP2102 / Konsole)'), style: TextStyle(fontWeight: FontWeight.w600, color: rc.muted)),
+          Text(tr('Node-Kabel (USB-Konsole)'), style: TextStyle(fontWeight: FontWeight.w600, color: rc.muted)),
           Row(children: [
             Expanded(
               child: TextFormField(

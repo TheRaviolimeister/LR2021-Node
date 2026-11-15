@@ -379,7 +379,7 @@ for (q, rg, rp, xx, yy) in (("Q3", "R11", "R15", X_GAP_A - 1.0, 64.0), ("Q4", "R
     s_ = 1 if xx < MID else -1          # gate resistor towards the Pi on both sides
     smd(q, "2N7002", ("Package_TO_SOT_SMD", "SOT-23"), xx, yy, 0, "C8545")
     smd(rg, "1k", R0603, xx + s_ * 3.6, yy, 90, "C21190")
-    smd(rp, "100k", R0603, xx - 0.4, yy + 3.3, 0, "C25803")
+    smd(rp, "10k", R0603, xx - 0.4, yy + 3.3, 0, "C25804")     # keeps the gate low while the Pi pin floats
 # UART series resistors (protect both sides when only one of them has power)
 smd("R5", "1k", R0603, X_GAP_A + 0.5, 56.0, 0, "C21190")
 smd("R6", "1k", R0603, X_GAP_A + 0.5, 60.0, 0, "C21190")
@@ -418,7 +418,7 @@ smd("U7", "USBLC6-2SC6", ("Package_TO_SOT_SMD", "SOT-23-6"), U7_X, U7_Y, 0, "C75
 smd("U6", "CH340C", ("Package_SO", "SOIC-16_3.9x9.9mm_P1.27mm"), U6_X, U6_Y, 0, "C84681")
 smd("C18", "100nF", C0603, U6_X + 2.5, U6_Y - 7.2, 90, "C14663")
 smd("C19", "4.7uF", C0603, U6_X, U6_Y - 7.2, 90, "C19666")
-smd("R25", "5.1k", R0603, G0 - 6.85, CON_Y - 4.9, 90, "C23186")
+smd("R25", "5.1k", R0603, G0 - 6.45, CON_Y - 4.9, 90, "C23186")
 smd("R26", "5.1k", R0603, G0 + 6.85, CON_Y - 4.9, 90, "C23186")
 smd("D5", "LED red", ("LED_SMD", "LED_0603_1608Metric"), G0 - 5.75, 78.0, 0, "C2286")
 smd("D6", "LED green", ("LED_SMD", "LED_0603_1608Metric"), G0 - 0.25, 78.0, 0, "C72043")
@@ -459,7 +459,7 @@ ref_at("C3", X_DKA + 4.0, Y_DK + 49.0)
 ref_at("D2", X_DKA + 9.0, Y_DK + 53.2)
 ref_at("R28", G0 - 6.1, 83.4)
 ref_at("R27", G0 - 6.1, 85.6)
-ref_at("R25", G0 - 6.85, CON_Y - 7.3)
+ref_at("R25", G0 - 6.45, CON_Y - 7.3)
 ref_at("R26", G0 + 8.0, CON_Y - 4.9, 90)
 ref_at("U6", U6_X, U6_Y)
 for _g in list(parts["J21"][0].GraphicalItems()):      # no silkscreen at the board edge
@@ -586,7 +586,7 @@ for _n in ("DIO7_B", "DIO8_B", "IRQ_B"):
 _HF_IN = (CX_HF - 6.4, CY_HF - 10.5, CX_HF + 6.4, CY_HF + 11.0)
 for _n in ("I2C_SDA", "I2C_SCL", "+3V3_PI"):
     KEEPOUT[_n] = [(0.0, 38.0, X_DKA - 1.0, BOARD_H), (0.0, Y_DK + 53.0, X_DKA + 27.0, BOARD_H), _LF_IN, _HF_IN]
-WIDTH = {"VIN": 0.8, "VIN_P": 1.0, "+5V": 1.2, "+5V_ESPA": 0.6, "+5V_ESPB": 0.6,
+WIDTH = {"VIN": 0.8, "VIN_P": 1.0, "+5V": 1.6, "+5V_ESPA": 0.6, "+5V_ESPB": 0.6,
          "+3V3_A": 0.25, "+3V3_B": 0.4, "+3V3_PI": 0.4}   # 3V3_A passes between header pins (module < 150 mA)
 SIGNAL_W = 0.25
 CLEAR = 0.15
@@ -602,13 +602,13 @@ for name, members in NETS.items():
             p.SetNet(n)
 
 # solid plane connection for the socket pins and all small SMD ground pads (thermal spokes would be
-# starved between the neighbouring pins); the SMA connectors and the power jacks keep thermals
+# starved between the neighbouring pins) and for the SMA connectors (solid RF ground at the launch)
 for fp_ in board.GetFootprints():
     ref_ = fp_.GetReference()
     for p in fp_.Pads():
         if p.GetNetname() != "GND":
             continue
-        if ref_ in ("U1", "U2", "U3", "U4", "U5", "J2", "J3", "J4", "J12") or \
+        if ref_ in ("U1", "U2", "U3", "U4", "U5", "J2", "J3", "J4", "J12") or ref_ in ANT or \
                 p.GetAttribute() == pcbnew.PAD_ATTRIB_SMD:
             p.SetLocalZoneConnection(pcbnew.ZONE_CONNECTION_FULL)
 
@@ -929,7 +929,7 @@ _p1, _p2, _p3 = _u7(-1.137, -0.95), _u7(-1.137, 0.0), _u7(-1.137, 0.95)      # D
 _p6, _p5, _p4 = _u7(1.137, -0.95), _u7(1.137, 0.0), _u7(1.137, 0.95)         # D+ out, VBUS, D- out
 _ud_p = (U6_X - 2.475, U6_Y + 0.635)                                          # CH340C UD+ (pin 5)
 _ud_m = (U6_X - 2.475, U6_Y + 1.905)                                          # CH340C UD- (pin 6)
-_r25 = (G0 - 6.85, CON_Y - 4.9 - 0.8)
+_r25 = (G0 - 6.45, CON_Y - 4.9 - 0.8)
 _r26 = (G0 + 6.85, CON_Y - 4.9 - 0.8)
 _x_dp, _x_dm = U7_X - 2.95, U7_X - 1.95                                       # vertical runs left of the ESD chip
 FIXED = {   # net: [(layer, width, [points...]) ...], vias as ("via", (x, y))
