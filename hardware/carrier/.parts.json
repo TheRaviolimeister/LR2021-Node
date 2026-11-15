@@ -239,15 +239,15 @@
   "assemble": true,
   "footprint": "C_0603_1608Metric"
  },
- "C7": {
-  "value": "10uF",
-  "lcsc": "C19702",
-  "assemble": true,
-  "footprint": "C_0603_1608Metric"
- },
  "C8": {
   "value": "100nF",
   "lcsc": "C14663",
+  "assemble": true,
+  "footprint": "C_0603_1608Metric"
+ },
+ "C7": {
+  "value": "10uF",
+  "lcsc": "C19702",
   "assemble": true,
   "footprint": "C_0603_1608Metric"
  },
@@ -347,6 +347,30 @@
   "assemble": true,
   "footprint": "R_0603_1608Metric"
  },
+ "J12": {
+  "value": "1x4 2.54",
+  "lcsc": "",
+  "assemble": false,
+  "footprint": "PinHeader_1x04_P2.54mm_Vertical"
+ },
+ "J4": {
+  "value": "1x4 2.54",
+  "lcsc": "",
+  "assemble": false,
+  "footprint": "PinHeader_1x04_P2.54mm_Vertical"
+ },
+ "J3": {
+  "value": "1x3 2.54",
+  "lcsc": "",
+  "assemble": false,
+  "footprint": "PinHeader_1x03_P2.54mm_Vertical"
+ },
+ "J2": {
+  "value": "JST-XH 5p",
+  "lcsc": "C157991",
+  "assemble": false,
+  "footprint": "JST_XH_B5B-XH-A_1x05_P2.50mm_Vertical"
+ },
  "R9": {
   "value": "1k",
   "lcsc": "C21190",
@@ -371,29 +395,11 @@
   "assemble": true,
   "footprint": "R_0603_1608Metric"
  },
- "J2": {
-  "value": "JST-XH 5p",
-  "lcsc": "C157991",
-  "assemble": false,
-  "footprint": "JST_XH_B5B-XH-A_1x05_P2.50mm_Vertical"
- },
- "J3": {
-  "value": "1x3 2.54",
-  "lcsc": "",
-  "assemble": false,
-  "footprint": "PinHeader_1x03_P2.54mm_Vertical"
- },
- "J4": {
-  "value": "1x4 2.54",
-  "lcsc": "",
-  "assemble": false,
-  "footprint": "PinHeader_1x04_P2.54mm_Vertical"
- },
- "J12": {
-  "value": "1x4 2.54",
-  "lcsc": "",
-  "assemble": false,
-  "footprint": "PinHeader_1x04_P2.54mm_Vertical"
+ "C17": {
+  "value": "22uF",
+  "lcsc": "C12891",
+  "assemble": true,
+  "footprint": "C_1206_3216Metric"
  },
  "J6": {
   "value": "SM04B-SRSS-TB",
@@ -402,12 +408,6 @@
   "footprint": "JST_SH_SM04B-SRSS-TB_1x04-1MP_P1.00mm_Horizontal"
  },
  "J7": {
-  "value": "SM04B-SRSS-TB",
-  "lcsc": "C160404",
-  "assemble": true,
-  "footprint": "JST_SH_SM04B-SRSS-TB_1x04-1MP_P1.00mm_Horizontal"
- },
- "J8": {
   "value": "SM04B-SRSS-TB",
   "lcsc": "C160404",
   "assemble": true,
@@ -426,6 +426,12 @@
   "footprint": "JST_SH_SM04B-SRSS-TB_1x04-1MP_P1.00mm_Horizontal"
  },
  "J11": {
+  "value": "SM04B-SRSS-TB",
+  "lcsc": "C160404",
+  "assemble": true,
+  "footprint": "JST_SH_SM04B-SRSS-TB_1x04-1MP_P1.00mm_Horizontal"
+ },
+ "J8": {
   "value": "SM04B-SRSS-TB",
   "lcsc": "C160404",
   "assemble": true,

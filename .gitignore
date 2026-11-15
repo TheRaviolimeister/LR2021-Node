@@ -34,3 +34,8 @@ App/source/*.iml
 # carrier board: keep the manufacturing files
 !hardware/carrier/fabrication/*.zip
 hardware/carrier/gen.log
+hardware/carrier/astar.so
+hardware/carrier/.gnd_links.json
+hardware/carrier/~*.lck
+hardware/carrier/*-backups/
+hardware/carrier/fp-info-cache

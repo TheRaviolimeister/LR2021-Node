@@ -7,29 +7,40 @@ board, and the small SMD parts can be assembled by the PCB manufacturer.
 
 ![Top](fabrication/top.png)
 
-> Revision 1.1 has not been manufactured yet. Before ordering, print `fabrication/layout.svg` at
+> Revision 1.2 has not been manufactured yet. Before ordering, print `fabrication/layout.svg` at
 > 100 % and check the header positions against your own modules.
 
 ## Layout
 
 ```
- top edge:   I2C I2C I2C   [868 LoRa]  [2.4G HF]        [2.4G LF]  [433 LoRa]   I2C I2C I2C
-             USB-C / J1    Core2021-HF                  Core2021-LF             I2C  GPS
-             power input                                                        console
-             ESP32 A                     I2C   I2C                              ESP32 B
-             (USB at the                                                        (USB at the
-              bottom edge)       Orange Pi Zero 2W (ports at the bottom edge)    bottom edge)
-                          I2C                                              I2C
+ top edge:                 [868 LoRa]  [2.4G HF]  I2C I2C  [2.4G LF]  [433 LoRa]   I2C I2C I2C
+             USB-C / J1    Core2021-HF                     Core2021-LF
+             power input   (both modules at the same height, mirrored)
+                                    I2C  I2C  I2C  I2C  I2C
+             ESP32 A            I2C header                                     ESP32 B
+             (USB at the        I2C header  USB-UART  GPS                      (USB at the
+              bottom edge)     Orange Pi Zero 2W (ports at the bottom edge)     bottom edge)
 ```
+
+The layout is mirror-symmetric about the vertical centre line: both radio modules sit at the same
+height, both ESP32 at the same distance from the side edges. The connectors for the console
+(USB-UART), GPS and I²C sit in the middle, directly above the Orange Pi pins they belong to.
+Signals run on the top layer; the bottom layer is a ground plane that is only interrupted by short
+crossings (mainly where the I²C bus branches to the sockets). The bus between each ESP32 and its
+radio module is routed without crossings: the lines of ESP32 A run in parallel along the left
+edge and over the top end of its socket, the 5 V rail runs along the left edge and under the USB end
+of ESP32 A and continues under the Orange Pi.
 
 ## Features
 
 - **Four SMA antenna connectors (90°, through hole) on the top edge:** 868 MHz LoRa on the left,
   433 MHz LoRa on the right, the two 2.4 GHz connectors in the middle.
-  - **RF lines:** each module pin is connected to its connector by a short 50 Ω line (grounded
+  - **RF lines:** each module pin is connected to its connector by a 50 Ω line (grounded
     coplanar waveguide: 1.55 mm track, 0.3 mm gap, solid ground underneath, ground via fence on
     both sides; calculated for the standard 1.6 mm FR4 two-layer stack). No other signal crosses
-    or runs underneath an RF line.
+    or runs underneath an RF line. Length: 15 mm (433 MHz module, antenna end towards the edge)
+    and 34 mm (868 MHz module, which has to sit antenna end down so that its LoRa connector is the
+    outer one). A matched line of this length does not radiate and loses well below 0.2 dB.
   - **Filter places:** every RF line has a π network close to the connector: the series 0 Ω
     resistor is fitted, the two shunt places (0603) stay empty. A low-pass or matching network can
     be added later. External cavity filters screw directly onto the SMA connector.
@@ -48,8 +59,11 @@ board, and the small SMD parts can be assembled by the PCB manufacturer.
   low). Pull-down resistors keep the ESP32 running while the Pi boots.
 - **LR2021 DIO7 and DIO8** are connected to GPIO8 and GPIO9 of both ESP32 (not used by the
   current firmware, reserved).
-- Decoupling capacitors at both radio modules, GPS connector with PPS, ground planes on both
-  layers.
+- **Console (USB-UART):** J3 is the 3-pin connector for the CP2102 USB serial adapter (GND, RXD,
+  TXD). It is the Orange Pi's debug console (UART0, 115200 Bd) and the "Node cable" connection of
+  the app. Connect only GND, RXD and TXD of the adapter, not its 3.3 V / 5 V pin.
+- Decoupling capacitors at both radio modules, an extra 22 µF at the Orange Pi's 5 V pins, GPS
+  connector with PPS, ground planes on both layers.
 
 ## Radio modules: antenna signal on the pins
 
@@ -81,7 +95,7 @@ not, bridge R2/R3 with a 0402 0 Ω resistor or a solder bridge. Leave the IPEX s
 | J13–J16 | SMA jack 90°, through hole | antennas: J13 868 MHz, J14 2.4 GHz (HF), J15 2.4 GHz (LF), J16 433 MHz |
 | J1 | JST-XH 2-pin | 5 V input from the battery shield (+ on the left) |
 | J2 | JST-XH 5-pin | GPS: 3V3, GND, TX, RX, PPS – labels = pins of the GPS module (GPS TX to “TX”) |
-| J3 | pin header 1×3 | console: GND, RXD, TXD – labels = pins of the USB serial adapter (adapter RXD to “RXD”); no supply pin |
+| J3 | pin header 1×3 | console / USB-UART (CP2102 adapter): GND, RXD, TXD – labels = pins of the adapter (adapter RXD to “RXD”); no supply pin |
 | J4, J12 | pin header 1×4 | I²C: GND, VCC (3.3 V), SCL, SDA |
 | J6–J11, J17–J20 | JST SH 4-pin (Qwiic) | I²C: GND, 3.3 V, SDA, SCL (assembled) |
 
@@ -92,13 +106,17 @@ without an antenna on the connector of the active band.
 
 | Signal | Orange Pi pin | ESP32 / module |
 |---|---|---|
-| UART3 TX / RX (500000 Bd) | 28 / 27 | ESP32 A GPIO1 / GPIO2 |
-| UART4 TX / RX (500000 Bd) | 7 / 16 | ESP32 B GPIO1 / GPIO2 |
+| UART4 TX / RX (500000 Bd) | 7 / 16 | ESP32 A GPIO1 / GPIO2 |
+| UART3 TX / RX (500000 Bd) | 28 / 27 | ESP32 B GPIO1 / GPIO2 |
 | UART5 TX / RX (9600 Bd) | 11 / 13 | GPS RX / TX, PPS on pin 15 |
 | UART0 TX / RX (console) | 8 / 10 | J3 |
 | I²C SDA / SCL | 3 / 5 | J4, J12, all Qwiic sockets |
 | EN / GPIO0 ESP32 A | 29 / 31 | via MOSFET, high = low on the ESP32 |
 | EN / GPIO0 ESP32 B | 32 / 33 | via MOSFET, high = low on the ESP32 |
+
+On the carrier board ESP32 A is on UART4 and ESP32 B on UART3 (the perfboard prototype uses the
+opposite assignment). This keeps every connection on its own side of the board. The node software
+identifies the two modems by their role (GET_INFO), so nothing has to be configured.
 
 ESP32 ↔ LR2021 as in [assembly.md](../../docs/hardware/assembly.md), plus DIO7 → GPIO8 and
 DIO8 → GPIO9.
@@ -108,14 +126,17 @@ DIO8 → GPIO9.
 | File | Content |
 |---|---|
 | `generate_board.py` | generates the complete board (footprints, placement, nets, RF lines, routing, ground planes) |
+| `astar.c` | path search used by the router (compiled automatically with gcc) |
 | `make_outputs.py` | design rule check, Gerber/drill, BOM, placement, renders |
+| `check_board.py` | checks every connection against the pin names of the modules, track lengths and part spacing |
 | `lr2021-carrier.kicad_pcb` | the KiCad 9 board – can be opened and edited in KiCad |
 | `netlist.json` | all connections |
 | `fabrication/` | files for ordering and pictures |
 
-Rebuild (Linux or WSL with KiCad 9, `python3-numpy`, `python3-scipy`):
+Rebuild (Linux or WSL with KiCad 9, `python3-numpy`, `python3-scipy`, `gcc`):
 
 ```
 python3 generate_board.py
 python3 make_outputs.py
+python3 check_board.py
 ```

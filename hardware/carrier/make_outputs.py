@@ -52,6 +52,13 @@ kinds = {}
 for v in viol:
     kinds[v["type"]] = kinds.get(v["type"], 0) + 1
 print("  ", kinds)
+# ground pads the planes did not reach: generate_board.py links them with a track in the next run
+gnd = sorted({m.group(2) + "." + m.group(1) for u in unconn for it in u.get("items", [])
+              for m in [re.search(r"pad (\S+) \[GND\] of (\S+)", it.get("description", ""))] if m})
+if gnd:
+    old = json.load(open(os.path.join(HERE, ".gnd_links.json"))) if os.path.exists(os.path.join(HERE, ".gnd_links.json")) else []
+    json.dump(sorted(set(old) | set(gnd)), open(os.path.join(HERE, ".gnd_links.json"), "w"))
+    print("   ground pads without plane connection:", gnd)
 
 # Gerber and drill
 layers = "F.Cu,B.Cu,F.Paste,F.Silkscreen,B.Silkscreen,F.Mask,B.Mask,Edge.Cuts"
