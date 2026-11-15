@@ -1,6 +1,6 @@
 # LR2021 Node – carrier board
 
-A 156 × 106 mm two-layer PCB that replaces the perfboard and the point-to-point wiring. All modules
+A 172 × 106 mm two-layer PCB that replaces the perfboard and the point-to-point wiring. All modules
 stay pluggable: the Orange Pi Zero 2W, both ESP32-S3 DevKitC-1 and both Core2021 modules sit in
 female headers with generous space between them. The four antenna connectors are soldered to the
 board, and the small SMD parts can be assembled by the PCB manufacturer.
@@ -18,18 +18,21 @@ board, and the small SMD parts can be assembled by the PCB manufacturer.
              power input   (both modules at the same height, mirrored)
                                     I2C  I2C  I2C  I2C  I2C
              ESP32 A            I2C header                                     ESP32 B
-             (USB at the        I2C header  USB-UART  GPS                      (USB at the
-              bottom edge)     Orange Pi Zero 2W (ports at the bottom edge)     bottom edge)
+             (USB at the        I2C header  CONSOLE  GPS                       (USB at the
+              bottom edge)  USB  Orange Pi Zero 2W (ports at the bottom edge)   bottom edge)
+                         console
 ```
 
 The layout is mirror-symmetric about the vertical centre line: both radio modules sit at the same
 height, both ESP32 at the same distance from the side edges. The connectors for the console
-(USB-UART), GPS and I²C sit in the middle, directly above the Orange Pi pins they belong to.
+adapter, GPS and I²C sit in the middle, directly above the Orange Pi pins they belong to. The USB
+console (USB-C, CH340C, TX/RX LEDs) sits between ESP32 A and the Orange Pi at the bottom edge.
 Signals run on the top layer; the bottom layer is a ground plane that is only interrupted by short
 crossings (mainly where the I²C bus branches to the sockets). The bus between each ESP32 and its
 radio module is routed without crossings: the lines of ESP32 A run in parallel along the left
 edge and over the top end of its socket, the 5 V rail runs along the left edge and under the USB end
-of ESP32 A and continues under the Orange Pi.
+of ESP32 A and continues under the Orange Pi. The USB-C receptacle, the ESD protection and the
+USB data lines have a fixed fan-out (0.5 mm pin pitch).
 
 ## Features
 
@@ -59,11 +62,22 @@ of ESP32 A and continues under the Orange Pi.
   low). Pull-down resistors keep the ESP32 running while the Pi boots.
 - **LR2021 DIO7 and DIO8** are connected to GPIO8 and GPIO9 of both ESP32 (not used by the
   current firmware, reserved).
-- **Console (USB-UART):** J3 is the 3-pin connector for the CP2102 USB serial adapter (GND, RXD,
-  TXD). It is the Orange Pi's debug console (UART0, 115200 Bd) and the "Node cable" connection of
-  the app. Connect only GND, RXD and TXD of the adapter, not its 3.3 V / 5 V pin.
+- **USB console on the board:** USB-C J21 ("USB CONSOLE") with a CH340C USB serial converter and
+  USBLC6-2SC6 ESD protection. It is the Orange Pi's debug console (UART0, 115200 Bd) and the
+  "Node cable" connection of the app – one USB-C cable from the PC is enough. Two LEDs show the
+  traffic: **TX** (red) = PC to node, **RX** (green) = node to PC.
+  - The CH340C runs from the node's 3.3 V, the 5 V of the PC is not used at all (WCH self-powered
+    mode). No current can flow between PC and node through the data lines, and the PC cannot feed
+    the node. The COM port therefore only appears while the node is switched on.
+  - Windows 10/11 installs the CH340 driver automatically (otherwise: WCH "CH341SER").
+- **Console adapter connector:** J3 (GND, RXD, TXD) for an external USB serial adapter such as the
+  CP2102 module, in parallel to the on-board converter. Use only one of them at a time. Connect only
+  GND, RXD and TXD of the adapter, not its 3.3 V / 5 V pin.
 - Decoupling capacitors at both radio modules, an extra 22 µF at the Orange Pi's 5 V pins, GPS
   connector with PPS, ground planes on both layers.
+- **Mounting holes:** M3 in the two top corners and two under the USB ends of the ESP32 sockets
+  (mount the board before plugging in the ESP32). Orange Pi pin 6 (GND) is not connected on the
+  carrier – it is connected to the other GND pins inside the Pi.
 
 ## Radio modules: antenna signal on the pins
 
@@ -95,7 +109,8 @@ not, bridge R2/R3 with a 0402 0 Ω resistor or a solder bridge. Leave the IPEX s
 | J13–J16 | SMA jack 90°, through hole | antennas: J13 868 MHz, J14 2.4 GHz (HF), J15 2.4 GHz (LF), J16 433 MHz |
 | J1 | JST-XH 2-pin | 5 V input from the battery shield (+ on the left) |
 | J2 | JST-XH 5-pin | GPS: 3V3, GND, TX, RX, PPS – labels = pins of the GPS module (GPS TX to “TX”) |
-| J3 | pin header 1×3 | console / USB-UART (CP2102 adapter): GND, RXD, TXD – labels = pins of the adapter (adapter RXD to “RXD”); no supply pin |
+| J3 | pin header 1×3 | console adapter (optional, e.g. CP2102): GND, RXD, TXD – labels = pins of the adapter (adapter RXD to “RXD”); no supply pin |
+| J21 | USB-C (assembled) | USB console, see above |
 | J4, J12 | pin header 1×4 | I²C: GND, VCC (3.3 V), SCL, SDA |
 | J6–J11, J17–J20 | JST SH 4-pin (Qwiic) | I²C: GND, 3.3 V, SDA, SCL (assembled) |
 
@@ -109,7 +124,7 @@ without an antenna on the connector of the active band.
 | UART4 TX / RX (500000 Bd) | 7 / 16 | ESP32 A GPIO1 / GPIO2 |
 | UART3 TX / RX (500000 Bd) | 28 / 27 | ESP32 B GPIO1 / GPIO2 |
 | UART5 TX / RX (9600 Bd) | 11 / 13 | GPS RX / TX, PPS on pin 15 |
-| UART0 TX / RX (console) | 8 / 10 | J3 |
+| UART0 TX / RX (console) | 8 / 10 | CH340C (J21) and J3 |
 | I²C SDA / SCL | 3 / 5 | J4, J12, all Qwiic sockets |
 | EN / GPIO0 ESP32 A | 29 / 31 | via MOSFET, high = low on the ESP32 |
 | EN / GPIO0 ESP32 B | 32 / 33 | via MOSFET, high = low on the ESP32 |

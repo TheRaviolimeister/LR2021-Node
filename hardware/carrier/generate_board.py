@@ -24,7 +24,7 @@ OUT = os.path.join(HERE, "lr2021-carrier.kicad_pcb")
 LIB = "/usr/share/kicad/footprints"
 
 VERSION = "1.2"
-BOARD_W, BOARD_H = 156.0, 106.0
+BOARD_W, BOARD_H = 172.0, 106.0
 
 MM = pcbnew.FromMM
 
@@ -158,7 +158,9 @@ def devkit_socket(ref, label):
     top = -21 * 2.54 - 8.0   # USB end
     bot = 1.40
     silk_rect(fp, -25.4 - 1.6, top, 1.6, bot + 0.3)
-    silk_rect(fp, -25.4 - 1.6, top, 1.6, bot + 0.3, layer=pcbnew.F_CrtYd, w=0.05)
+    # courtyard = the pin rows (small parts may sit under the board, it is 8.5 mm above the carrier)
+    silk_rect(fp, -1.3, -21 * 2.54 - 1.3, 1.3, 1.3, layer=pcbnew.F_CrtYd, w=0.05)
+    silk_rect(fp, -25.4 - 1.3, -21 * 2.54 - 1.3, -22.86 + 1.3, 1.3, layer=pcbnew.F_CrtYd, w=0.05)
     silk_line(fp, -22.86 - 1.3, top + 3.5, -22.86 - 1.3, bot - 1, w=0.1)
     fp_text(fp, label, -11.43, -30.0, 1.4, angle=90)
     fp_text(fp, "USB", -11.43, top + 2.5, 1.0)
@@ -271,7 +273,7 @@ u1 = place(devkit_socket("U1", "ESP32 A (868 MHz)"), X_DKA, Y_DK, rot=180, assem
 u2 = place(devkit_socket("U2", "ESP32 B (433 MHz)"), X_DKB, Y_DK, rot=180, assemble=False)
 # both radio modules at the same height, mirrored about the centre line
 CY_RF = 28.5
-CX_HF, CX_LF = 51.0, BOARD_W - 51.0
+CX_HF, CX_LF = MID - 27.0, MID + 27.0
 # Core2021-HF: antenna end down, LoRa row left, 2.4 GHz row right
 CY_HF = CY_LF = CY_RF
 u3 = place(core_socket("U3", "Core2021-HF"), CX_HF, CY_HF, rot=-90, assemble=False)
@@ -359,8 +361,9 @@ smd("R4", "1k", R0603, 22.5, 34.0, 0, "C21190")
 # ESP 5 V feed (blocks back-feeding from a PC on the ESP32 USB port), between each ESP32 and the Pi
 X_GAP_A = (X_DKA + 27.0 + PI_X) / 2          # centre of the gap between ESP32 A and the Pi
 X_GAP_B = BOARD_W - X_GAP_A
-smd("D2", "SS34", ("Diode_SMD", "D_SMA"), X_GAP_A, 87.0, 90, "C8678")
-smd("C3", "10uF", C0603, X_GAP_A - 3.0, 92.5, 90, "C19702")
+# ESP32 A: diode and capacitor inside its socket next to its 5V pin (the 5 V rail passes there)
+smd("D2", "SS34", ("Diode_SMD", "D_SMA"), X_DKA + 9.0, Y_DK + 50.8, 0, "C8678")
+smd("C3", "10uF", C0603, X_DKA + 4.0, Y_DK + 47.5, 0, "C19702")
 smd("D3", "SS34", ("Diode_SMD", "D_SMA"), X_GAP_B, 87.0, 90, "C8678")
 smd("C4", "10uF", C0603, X_GAP_B + 3.0, 92.5, 90, "C19702")
 # LR2021 decoupling next to the 3V3 pin, outside the module outline
@@ -371,8 +374,8 @@ smd("C6", "100nF", C0603, CX_HF + 2.0, CY_HF - 13.0, 0, "C14663")
 smd("C8", "100nF", C0603, CX_LF - 4.0, CY_LF + 8.89, 0, "C14663")
 smd("C7", "10uF", C0603, CX_LF - 4.0, CY_LF + 6.0, 0, "C19702")
 # ESP reset / boot control from the Pi (Q3/Q4 = ESP32 A, Q5/Q6 = ESP32 B), next to the Pi
-for (q, rg, rp, xx, yy) in (("Q3", "R11", "R15", X_GAP_A - 1.0, 70.0), ("Q4", "R12", "R16", X_GAP_A - 1.0, 77.5),
-                            ("Q5", "R13", "R17", X_GAP_B + 1.0, 70.0), ("Q6", "R14", "R18", X_GAP_B + 1.0, 77.5)):
+for (q, rg, rp, xx, yy) in (("Q3", "R11", "R15", X_GAP_A - 1.0, 64.0), ("Q4", "R12", "R16", X_GAP_A - 1.0, 71.5),
+                            ("Q5", "R13", "R17", X_GAP_B + 1.0, 64.0), ("Q6", "R14", "R18", X_GAP_B + 1.0, 71.5)):
     s_ = 1 if xx < MID else -1          # gate resistor towards the Pi on both sides
     smd(q, "2N7002", ("Package_TO_SOT_SMD", "SOT-23"), xx, yy, 0, "C8545")
     smd(rg, "1k", R0603, xx + s_ * 3.6, yy, 90, "C21190")
@@ -388,17 +391,41 @@ smd("R8", "1k", R0603, X_GAP_B - 0.5, 60.0, 0, "C21190")
 PANEL_Y = 66.0
 HDR3 = ("Connector_PinHeader_2.54mm", "PinHeader_1x03_P2.54mm_Vertical")
 HDR4 = ("Connector_PinHeader_2.54mm", "PinHeader_1x04_P2.54mm_Vertical")
-j12 = place(lib_fp("J12", "I2C", *HDR4), 55.0, PANEL_Y - 8.0, rot=-90, value="1x4 2.54", assemble=False)
-j4 = place(lib_fp("J4", "I2C", *HDR4), 55.0, PANEL_Y, rot=-90, value="1x4 2.54", assemble=False)
-j3 = place(lib_fp("J3", "USB-UART", *HDR3), 66.0, PANEL_Y, rot=-90, value="1x3 2.54", assemble=False)
+j12 = place(lib_fp("J12", "I2C", *HDR4), PI_X + 9.5, PANEL_Y - 8.0, rot=-90, value="1x4 2.54", assemble=False)
+j4 = place(lib_fp("J4", "I2C", *HDR4), PI_X + 9.5, PANEL_Y, rot=-90, value="1x4 2.54", assemble=False)
+j3 = place(lib_fp("J3", "CONSOLE", *HDR3), PI_X + 20.5, PANEL_Y, rot=-90, value="1x3 2.54", assemble=False)
 j2 = place(lib_fp("J2", "GPS", "Connector_JST", "JST_XH_B5B-XH-A_1x05_P2.50mm_Vertical"),
-           73.5, PANEL_Y, rot=0, value="JST-XH 5p", lcsc="C157991", assemble=False)
+           PI_X + 28.0, PANEL_Y, rot=0, value="JST-XH 5p", lcsc="C157991", assemble=False)
 # console series resistors, I2C pull-ups to 3.3 V, 5 V buffer for the Pi
-smd("R9", "1k", R0603, 61.5, PANEL_Y + 5.5, 90, "C21190")
-smd("R10", "1k", R0603, 64.0, PANEL_Y + 5.5, 90, "C21190")
-smd("R19", "4.7k", R0603, 54.0, PANEL_Y + 5.5, 90, "C23162")
-smd("R20", "4.7k", R0603, 56.5, PANEL_Y + 5.5, 90, "C23162")
-smd("C17", "22uF", ("Capacitor_SMD", "C_1206_3216Metric"), 49.5, PANEL_Y + 6.0, 0, "C12891")
+smd("R9", "1k", R0603, PI_X + 16.0, PANEL_Y + 5.5, 90, "C21190")
+smd("R10", "1k", R0603, PI_X + 18.5, PANEL_Y + 5.5, 90, "C21190")
+smd("R19", "4.7k", R0603, PI_X + 8.5, PANEL_Y + 5.5, 90, "C23162")
+smd("R20", "4.7k", R0603, PI_X + 11.0, PANEL_Y + 5.5, 90, "C23162")
+smd("C17", "22uF", ("Capacitor_SMD", "C_1206_3216Metric"), PI_X + 4.0, PANEL_Y + 6.0, 0, "C12891")
+
+
+# ---- USB console (CH340C) between ESP32 A and the Pi: USB-C at the bottom edge ----
+# The CH340C runs from the node's 3.3 V (same supply as the Pi, VBUS of the PC is not used), so no
+# current can flow between the PC and the node through the data lines. TX/RX LEDs sit on the data
+# lines and blink with the traffic (TX = PC to node, RX = node to PC).
+G0 = X_GAP_A
+CON_Y = BOARD_H - 3.4                         # USB-C front 0.25 mm over the board edge
+U7_X, U7_Y = G0 - 2.0, 91.5                   # USBLC6-2SC6 ESD protection
+U6_X, U6_Y = G0 + 4.65, U7_Y - 1.585          # CH340C (UD+ level with the ESD output)
+place(lib_fp("J21", "USB-C console", "Connector_USB", "USB_C_Receptacle_HRO_TYPE-C-31-M-12"),
+      G0, CON_Y, 0, "TYPE-C-31-M-12", "C165948")
+smd("U7", "USBLC6-2SC6", ("Package_TO_SOT_SMD", "SOT-23-6"), U7_X, U7_Y, 0, "C7519")
+smd("U6", "CH340C", ("Package_SO", "SOIC-16_3.9x9.9mm_P1.27mm"), U6_X, U6_Y, 0, "C84681")
+smd("C18", "100nF", C0603, U6_X + 2.5, U6_Y - 7.2, 90, "C14663")
+smd("C19", "4.7uF", C0603, U6_X, U6_Y - 7.2, 90, "C19666")
+smd("R25", "5.1k", R0603, G0 - 6.85, CON_Y - 4.9, 90, "C23186")
+smd("R26", "5.1k", R0603, G0 + 6.85, CON_Y - 4.9, 90, "C23186")
+smd("D5", "LED red", ("LED_SMD", "LED_0603_1608Metric"), G0 - 5.75, 78.0, 0, "C2286")
+smd("D6", "LED green", ("LED_SMD", "LED_0603_1608Metric"), G0 - 0.25, 78.0, 0, "C72043")
+smd("R29", "1k", R0603, G0 - 5.75, 81.2, 0, "C21190")
+smd("R30", "1k", R0603, G0 - 0.25, 81.2, 0, "C21190")
+smd("R28", "4.7k", R0603, G0 - 3.25, 83.4, 0, "C23162")
+smd("R27", "1k", R0603, G0 - 3.25, 85.6, 0, "C21190")
 
 # ---- I2C expansion: Qwiic / STEMMA QT sockets (JST SH 4-pin: GND, 3V3, SDA, SCL), one shared bus ----
 SH = ("Connector_JST", "JST_SH_SM04B-SRSS-TB_1x04-1MP_P1.00mm_Horizontal")
@@ -422,19 +449,28 @@ def ref_at(ref, x, y, angle=0):
 
 
 for _s, _x in ((1, X_GAP_A), (-1, X_GAP_B)):
-    for _y, (rg, rp) in ((70.0, ("R11", "R15") if _s > 0 else ("R13", "R17")),
-                         (77.5, ("R12", "R16") if _s > 0 else ("R14", "R18"))):
+    for _y, (rg, rp) in ((64.0, ("R11", "R15") if _s > 0 else ("R13", "R17")),
+                         (71.5, ("R12", "R16") if _s > 0 else ("R14", "R18"))):
         ref_at(rg, _x + _s * 3.85, _y, 90)
         ref_at(rp, _x - _s * 1.0 - 0.4 + _s * 2.4, _y + 3.3)
-for _r, _x in (("R19", 54.0), ("R20", 56.5), ("R9", 61.5), ("R10", 64.0)):
+for _r, _x in (("R19", PI_X + 8.5), ("R20", PI_X + 11.0), ("R9", PI_X + 16.0), ("R10", PI_X + 18.5)):
     ref_at(_r, _x, PANEL_Y + 8.0)
-ref_at("C3", X_GAP_A - 3.0, 94.9)
+ref_at("C3", X_DKA + 4.0, Y_DK + 49.0)
+ref_at("D2", X_DKA + 9.0, Y_DK + 53.2)
+ref_at("R28", G0 - 6.1, 83.4)
+ref_at("R27", G0 - 6.1, 85.6)
+ref_at("R25", G0 - 6.85, CON_Y - 7.3)
+ref_at("R26", G0 + 8.0, CON_Y - 4.9, 90)
+ref_at("U6", U6_X, U6_Y)
+for _g in list(parts["J21"][0].GraphicalItems()):      # no silkscreen at the board edge
+    if _g.GetLayer() == pcbnew.F_SilkS and pcbnew.ToMM(_g.GetBoundingBox().GetBottom()) > BOARD_H - 1.6:
+        parts["J21"][0].Remove(_g)
 ref_at("C4", X_GAP_B + 3.0, 94.9)
 
 mount_hole("H1", 3.5, 3.5)
 mount_hole("H2", BOARD_W - 3.5, 3.5)
-mount_hole("H3", X_GAP_A, BOARD_H - 5.5)
-mount_hole("H4", X_GAP_B, BOARD_H - 5.5)
+mount_hole("H3", X_DKA + 20.0, BOARD_H - 3.0)        # under the USB end of ESP32 A
+mount_hole("H4", BOARD_W - X_DKA - 20.0, BOARD_H - 3.0)
 
 # ----------------------------------------------------------------------------------------------
 # Nets
@@ -451,7 +487,8 @@ NETS = {
     "+5V_ESPB": ["D3.1", "C4.1", "U2.21"],
     "+3V3_A": ["U1.1", "U1.2", "U3.8", "C5.1", "C6.1"],
     "+3V3_B": ["U2.1", "U2.2", "U4.8", "C7.1", "C8.1"],
-    "+3V3_PI": ["U5.1", "U5.17", "J2.1", "J4.2", "J12.2", "R19.1", "R20.1"] + [r + ".2" for r in QWIIC_REFS],
+    "+3V3_PI": ["U5.1", "U5.17", "J2.1", "J4.2", "J12.2", "R19.1", "R20.1", "U6.16", "U6.4", "C18.1", "C19.1",
+                "D5.2", "D6.2"] + [r + ".2" for r in QWIIC_REFS],
     "EN_A": ["U1.3", "Q3.3"], "IO0_A": ["U1.36", "Q4.3"],
     "EN_B": ["U2.3", "Q5.3"], "IO0_B": ["U2.36", "Q6.3"],
     "PI_ENA": ["U5.29", "R11.1"], "G_ENA": ["R11.2", "Q3.1", "R15.1"],
@@ -464,8 +501,15 @@ NETS = {
     "A_TXD": ["U1.27", "R6.1"], "PI_RX4": ["R6.2", "U5.16"],
     "PI_TX3": ["U5.28", "R7.1"], "B_RXD": ["R7.2", "U2.26"],
     "B_TXD": ["U2.27", "R8.1"], "PI_RX3": ["R8.2", "U5.27"],
-    "PI_TX0": ["U5.8", "R9.1"], "CON_TXD": ["R9.2", "J3.2"],
-    "CON_RXD": ["J3.3", "R10.1"], "PI_RX0": ["R10.2", "U5.10"],
+    "PI_TX0": ["U5.8", "R9.1", "R27.1", "R30.2"], "CON_TXD": ["R9.2", "J3.2"],
+    "CON_RXD": ["J3.3", "R10.1"], "PI_RX0": ["R10.2", "U5.10", "R28.2"],
+    # USB console (CH340C), powered from the node's 3.3 V
+    "USB_DP": ["J21.A6", "J21.B6", "U7.1", "U7.6", "U6.5"],
+    "USB_DM": ["J21.A7", "J21.B7", "U7.3", "U7.4", "U6.6"],
+    "CC1_U": ["J21.A5", "R25.2"], "CC2_U": ["J21.B5", "R26.2"],
+    "VBUS_U": ["J21.A4", "J21.B9", "J21.A9", "J21.B4", "U7.5"],
+    "C_TXD": ["U6.2", "R28.1", "R29.2"], "LED_TX": ["R29.1", "D5.1"],
+    "C_RXD": ["U6.3", "R27.2"], "LED_RX": ["R30.1", "D6.1"],
     "GPS_TX": ["J2.3", "U5.13"], "GPS_RX": ["J2.4", "U5.11"], "GPS_PPS": ["J2.5", "U5.15"],
     "I2C_SCL": ["J4.3", "U5.5", "J12.3", "R20.2"] + [r + ".4" for r in QWIIC_REFS],
     "I2C_SDA": ["J4.4", "U5.3", "J12.4", "R19.2"] + [r + ".3" for r in QWIIC_REFS],
@@ -480,9 +524,10 @@ NETS = {
     "GND": ["J1.2", "J5.A12", "J5.B12", "J5.S1", "R1.2", "R2.2", "R3.2", "D1.2",
             "C1.2", "C2.2", "C17.2", "C3.2", "C4.2", "C5.2", "C6.2", "C7.2", "C8.2", "D4.1",
             "Q3.2", "Q4.2", "Q5.2", "Q6.2", "R15.2", "R16.2", "R17.2", "R18.2",
-            "U5.6", "U5.9", "U5.14", "U5.20", "U5.25", "U5.30", "U5.34", "U5.39",
+            "U5.9", "U5.14", "U5.20", "U5.25", "U5.30", "U5.34", "U5.39",
             "U1.22", "U1.23", "U1.43", "U1.44", "U2.22", "U2.23", "U2.43", "U2.44",
-            "U3.2", "U3.7", "U3.10", "U4.2", "U4.7", "U4.10", "J2.2", "J3.1", "J4.1", "J12.1"]
+            "U3.2", "U3.7", "U3.10", "U4.2", "U4.7", "U4.10", "J2.2", "J3.1", "J4.1", "J12.1",
+            "U6.1", "C18.2", "C19.2", "R25.1", "R26.1", "U7.2", "J21.A1", "J21.A12", "J21.B1", "J21.B12", "J21.S1"]
            + [r + ".1" for r in QWIIC_REFS] + [r + ".MP" for r in QWIIC_REFS]
            + [r + ".2" for r in ANT],
 }
@@ -502,10 +547,10 @@ RF_NETS = [n for n in NETS if n.startswith("RF_")]
 #    from the module this keeps the pin order, so the bus needs no crossings.
 #  - EN, IRQ, DIO7 and DIO8 of ESP32 A leave the socket to the right.
 #  - The 5 V rail runs along the left board edge (outside the bus) and under the USB end of ESP32 A.
-_A_IN = (X_DKA + 1.5, Y_DK - 1.5, X_DKA + 21.5, Y_DK + 54.5)          # inside the ESP32 A socket
+_A_IN = (X_DKA + 1.5, Y_DK - 1.5, X_DKA + 21.5, Y_DK + 45.0)          # inside the ESP32 A socket (above D2)
 _A_WEST = [(X_DKA + 1.0, Y_DK - 0.3, CX_HF + 12.0, BOARD_H)]
 _A_EAST = [(0.0, 38.0, X_DKA - 1.0, BOARD_H), (0.0, 38.0, CX_HF - 6.0, Y_DK - 0.9)]
-KEEPOUT = {"+5V": [_A_IN, (2.1, 38.0, CX_HF + 13.0, 69.5),
+KEEPOUT = {"+5V": [_A_IN, (2.1, 38.0, CX_HF + 13.0, 69.5), (X_DKA + 28.0, 79.0, PI_X + 1.0, 99.2),
                    (PI_X + 12.5, 60.0, PI_X + 62.0, PI_Y + 6.0)]}   # 5 V passes under the Pi, not over its header
 # fixed lanes for the ESP32 A SPI bus: in the edge channel (x) and above the socket (y); lane 0 is next to
 # the pins / lowest above the socket, the CS line is outermost and therefore the first one to turn
@@ -873,12 +918,71 @@ for name, (pts, side) in RF_LINES.items():
                 for L in (F, B):
                     occ[L][near & (occ[L] <= 0)] = gid_rf
 print(f"RF: {len(rf_tracks)} segments, {len(rf_vias)} fence vias", flush=True)
+# ---- USB console: fixed fan-out of the USB-C receptacle (0.5 mm pitch) and the ESD chip ----
+# Drawn directly like the RF lines; the router does not touch these nets.
+def LC(x, y):                      # USB-C footprint coordinates -> board
+    return (G0 + x, CON_Y + y)
+
+
+_u7 = lambda x, y: (U7_X + x, U7_Y + y)
+_p1, _p2, _p3 = _u7(-1.137, -0.95), _u7(-1.137, 0.0), _u7(-1.137, 0.95)      # D+ in, GND, D- in
+_p6, _p5, _p4 = _u7(1.137, -0.95), _u7(1.137, 0.0), _u7(1.137, 0.95)         # D+ out, VBUS, D- out
+_ud_p = (U6_X - 2.475, U6_Y + 0.635)                                          # CH340C UD+ (pin 5)
+_ud_m = (U6_X - 2.475, U6_Y + 1.905)                                          # CH340C UD- (pin 6)
+_r25 = (G0 - 6.85, CON_Y - 4.9 - 0.8)
+_r26 = (G0 + 6.85, CON_Y - 4.9 - 0.8)
+_x_dp, _x_dm = U7_X - 2.95, U7_X - 1.95                                       # vertical runs left of the ESD chip
+FIXED = {   # net: [(layer, width, [points...]) ...], vias as ("via", (x, y))
+    "USB_DP": [(F, 0.2, [LC(-0.25, -4.04), LC(-0.25, -5.15), LC(0.75, -5.15), LC(0.75, -4.04)]),
+               (F, 0.2, [LC(-0.25, -5.15), LC(-0.25, -6.1), (G0 - 0.25, 95.0), (_x_dp, 95.0), (_x_dp, _p1[1]), _p1]),
+               (F, 0.2, [_p6, _ud_p]),
+               (F, 0.2, [_p1, (_p1[0], _p1[1] - 1.15), (_p6[0], _p6[1] - 1.15), _p6])],   # I/O1 in = out
+    "USB_DM": [(F, 0.2, [LC(0.25, -4.04), LC(0.25, -2.6)]), (F, 0.2, [LC(-0.75, -4.04), LC(-0.75, -2.6)]),
+               ("via", LC(0.25, -2.6)), ("via", LC(-0.75, -2.6)),
+               (B, 0.2, [LC(0.25, -2.6), LC(-0.75, -2.6), (_x_dm, LC(-0.75, -2.6)[1] - (LC(-0.75, 0)[0] - _x_dm)),
+                         (_x_dm, _p3[1] + 0.85)]),
+               ("via", (_x_dm, _p3[1] + 0.85)),
+               (F, 0.2, [(_x_dm, _p3[1] + 0.85), (_x_dm, _p3[1]), _p3]),
+               (F, 0.2, [_p4, (_p4[0] + 1.0, _p4[1]), (_p4[0] + 1.0 + (_p4[1] - _ud_m[1]), _ud_m[1]), _ud_m]),
+               (F, 0.2, [_p3, (_p3[0], _p3[1] + 1.25), (_p4[0], _p4[1] + 1.25), _p4])],   # I/O2 in = out
+    "CC1_U": [(F, 0.2, [LC(-1.25, -4.04), LC(-1.25, -5.0), LC(-1.75, -5.5), LC(-1.75, -6.6),
+                        (_r25[0], LC(0, -6.6)[1]), _r25])],
+    "CC2_U": [(F, 0.2, [LC(1.75, -4.04), LC(1.75, -5.0), LC(2.45, -5.7), LC(2.45, -6.6),
+                        (_r26[0], LC(0, -6.6)[1]), _r26])],
+    "VBUS_U": [(F, 0.2, [LC(-2.45, -3.6), LC(-2.0, -3.0), LC(-2.0, -1.8)]),
+               (F, 0.2, [LC(2.45, -3.6), LC(2.0, -3.0), LC(2.0, -1.8)]),
+               ("via", LC(-2.0, -1.8)), ("via", LC(2.0, -1.8)),
+               (B, 0.25, [LC(-2.0, -1.8), LC(2.0, -1.8), (U7_X, U7_Y)]),
+               ("via", (U7_X, U7_Y)), (F, 0.2, [(U7_X, U7_Y), _p5])],
+    "GND": [(F, 0.3, [_p2, (_p2[0] - 1.06, _p2[1])]), ("via", (_p2[0] - 1.06, _p2[1]))],
+}
+FIXED_NETS = [n for n in FIXED if n != "GND"]
+for name, items in FIXED.items():
+    nid = net_ids[name]
+    for it in items:
+        if it[0] == "via":
+            vx, vy = it[1]
+            rf_vias.append((nid, (vx, vy), 0.6, 0.3))
+            viamask[(XS - vx) ** 2 + (YS - vy) ** 2 <= 1.0 ** 2] = True
+            vd = (XS - vx) ** 2 + (YS - vy) ** 2 <= (0.3 + 0.065) ** 2
+            for L in (F, B):
+                occ[L][vd & (occ[L] == 0)] = nid
+            continue
+        L, w, pts = it
+        for p, q in zip(pts, pts[1:]):
+            rf_tracks.append((nid, w, L, p, q))
+            m = seg_mask(p, q, w / 2 + 0.065)
+            occ[L][m & (occ[L] == 0)] = nid
+print("console: fixed fan-out drawn", flush=True)
+
 # ---- every SMD ground pad gets its own via to the bottom plane, placed before routing ----
 pad_vias = 0
 via_r = 0.3
 for fp_ in board.GetFootprints():
     for p in fp_.Pads():
         if p.GetNetname() != "GND" or p.GetAttribute() != pcbnew.PAD_ATTRIB_SMD:
+            continue
+        if fp_.GetReference() == "U7":          # has its via in the fixed fan-out
             continue
         c = p.GetPosition()
         px, py = pcbnew.ToMM(c.x), pcbnew.ToMM(c.y)
@@ -924,11 +1028,15 @@ if os.environ.get("PLACE_ONLY"):
     for nid, w, L, a, b in rf_tracks:
         t = pcbnew.PCB_TRACK(board)
         t.SetStart(V(*a)); t.SetEnd(V(*b)); t.SetWidth(MM(w))
-        t.SetLayer(pcbnew.F_Cu); t.SetNet(nets[id_names[nid]]); board.Add(t)
+        t.SetLayer(pcbnew.F_Cu if L == F else pcbnew.B_Cu); t.SetNet(nets[id_names[nid]]); board.Add(t)
+    for nid, (x, y), size, drill in rf_vias:
+        v = pcbnew.PCB_VIA(board)
+        v.SetPosition(V(x, y)); v.SetWidth(MM(size)); v.SetDrill(MM(drill))
+        v.SetNet(nets[id_names[nid]]); board.Add(v)
     board.Save(OUT)
     sys.exit(0)
 
-order = [n for n in NETS if n != "GND" and n not in RF_NETS]
+order = [n for n in NETS if n != "GND" and n not in RF_NETS and n not in FIXED_NETS]
 BUS = ("CS_", "SCK_", "MOSI_", "MISO_", "NRST_", "BUSY_", "IRQ_", "DIO7_", "DIO8_")
 # the module buses first (they need the straightest paths), then supplies, then the rest by length
 def group(n):
@@ -1061,14 +1169,17 @@ for ref, (x, label) in ANT.items():
 def pin_labels(names, x0, dx, y):
     for k, txt in enumerate(names):
         board_text(txt, x0 + k * dx, y, 0.8, thick=0.12)
-pin_labels(("GND", "3V3", "SCL", "SDA"), 55.0, -2.54, PANEL_Y - 2.6)
-pin_labels(("GND", "3V3", "SCL", "SDA"), 55.0, -2.54, PANEL_Y - 10.6)
-board_text("I2C 3.3V", 51.2, PANEL_Y - 12.0, 0.8)
-pin_labels(("GND", "RXD", "TXD"), 66.0, -2.54, PANEL_Y - 2.6)
-board_text("USB-UART", 63.5, PANEL_Y - 5.6, 0.8)
-board_text("(CP2102)", 63.5, PANEL_Y - 4.2, 0.8)
-pin_labels(("3V3", "GND", "TX", "RX", "PPS"), 73.5, 2.5, PANEL_Y - 3.8)
-board_text("GPS", 78.5, PANEL_Y - 5.4, 0.8)
+pin_labels(("GND", "3V3", "SCL", "SDA"), PI_X + 9.5, -2.54, PANEL_Y - 2.6)
+pin_labels(("GND", "3V3", "SCL", "SDA"), PI_X + 9.5, -2.54, PANEL_Y - 10.6)
+board_text("I2C 3.3V", PI_X + 5.7, PANEL_Y - 12.0, 0.8)
+pin_labels(("GND", "RXD", "TXD"), PI_X + 20.5, -2.54, PANEL_Y - 2.6)
+board_text("CONSOLE", PI_X + 18.0, PANEL_Y - 5.6, 0.8)
+board_text("(adapter)", PI_X + 18.0, PANEL_Y - 4.2, 0.8)
+pin_labels(("3V3", "GND", "TX", "RX", "PPS"), PI_X + 28.0, 2.5, PANEL_Y - 3.8)
+board_text("GPS", PI_X + 33.0, PANEL_Y - 5.4, 0.8)
+board_text("USB CONSOLE", X_DKA + 27.6, 90.0, 0.8, angle=90)
+board_text("TX", G0 - 3.35, 78.0, 0.8)
+board_text("RX", G0 + 2.15, 78.0, 0.8)
 board_text("I2C 3.3V", MID, 8.3, 0.8)
 board_text("I2C 3.3V", BOARD_W - 21.5, 8.3, 0.8)
 board_text("I2C 3.3V", MID, 54.6, 0.8)

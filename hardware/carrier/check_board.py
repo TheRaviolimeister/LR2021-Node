@@ -123,14 +123,28 @@ expect_same(("J2", "3"), ("U5", "13"), "GPS TX -> Pi UART5 RX")
 expect_same(("J2", "4"), ("U5", "11"), "Pi UART5 TX -> GPS RX")
 expect_same(("J2", "5"), ("U5", "15"), "GPS PPS -> Pi PI5")
 expect_same(("J2", "1"), ("U5", "1"), "GPS 3V3")
+# USB console: USB-C -> ESD -> CH340C, CH340C TXD -> 4.7k -> Pi RX0, Pi TX0 -> 1k -> CH340C RXD
+for a, b, what in ((("J21", "A6"), ("U6", "5"), "USB D+ (A6) -> CH340C UD+"), (("J21", "B6"), ("U6", "5"), "USB D+ (B6)"),
+                   (("J21", "A7"), ("U6", "6"), "USB D- (A7) -> CH340C UD-"), (("J21", "B7"), ("U6", "6"), "USB D- (B7)"),
+                   (("U7", "1"), ("U6", "5"), "ESD I/O1 on D+"), (("U7", "3"), ("U6", "6"), "ESD I/O2 on D-"),
+                   (("U7", "5"), ("J21", "A4"), "ESD VBUS"), (("U6", "16"), ("U5", "1"), "CH340C VCC = 3.3 V"),
+                   (("U6", "4"), ("U5", "1"), "CH340C V3 = VCC (3.3 V mode)")):
+    expect_same(a, b, what)
+for p in (("U6", "1"), ("U7", "2"), ("J21", "A1"), ("J21", "B12")):
+    if net_of(*p) != "GND":
+        errors.append(f"{p} not GND")
+expect_via(("U6", "2"), ("U5", "10"), "R28", "CH340C TXD -> Pi UART0 RX")
+expect_via(("U5", "8"), ("U6", "3"), "R27", "Pi UART0 TX -> CH340C RXD")
+if net_of("J21", "A4") in (net_of("F1", "2"), net_of("U5", "1")):
+    errors.append("USB VBUS connected to a node supply")
 # I2C: all sockets on Pi pin 3 (SDA) / 5 (SCL) / 3V3 / GND
 for ref in ("J6", "J7", "J8", "J9", "J10", "J11", "J17", "J18", "J19", "J20"):
-    expect_same((ref, "1"), ("U5", "6"), f"{ref} GND")
+    expect_same((ref, "1"), ("U5", "9"), f"{ref} GND")
     expect_same((ref, "2"), ("U5", "1"), f"{ref} 3V3")
     expect_same((ref, "3"), ("U5", "3"), f"{ref} SDA")
     expect_same((ref, "4"), ("U5", "5"), f"{ref} SCL")
 for ref in ("J4", "J12"):
-    expect_same((ref, "1"), ("U5", "6"), f"{ref} GND")
+    expect_same((ref, "1"), ("U5", "9"), f"{ref} GND")
     expect_same((ref, "2"), ("U5", "1"), f"{ref} 3V3")
     expect_same((ref, "3"), ("U5", "5"), f"{ref} SCL")
     expect_same((ref, "4"), ("U5", "3"), f"{ref} SDA")
@@ -140,7 +154,7 @@ for r in ("R19", "R20"):
 # power
 for p in ("2", "4"):
     expect_same(("U5", p), ("F1", "2"), f"Pi pin {p} 5V")
-for p in ("6", "9", "14", "20", "25", "30", "34", "39"):
+for p in ("9", "14", "20", "25", "30", "34", "39"):      # pin 6 is only connected inside the Pi
     if net_of("U5", p) != "GND":
         errors.append(f"Pi pin {p} not GND")
 for esp, d in (("U1", "D2"), ("U2", "D3")):

@@ -13,7 +13,7 @@ the names are chosen so you can search for them directly.
 | 1 | **Waveshare Core2021-HF** (Semtech LR2021, 850–930 MHz + 2.4 GHz) | radio module for ESP32 A |
 | 1 | **Waveshare Core2021-LF** (Semtech LR2021, 410–510 MHz + 2.4 GHz) | radio module for ESP32 B |
 | 1 | **GPS module L76X** (Waveshare L76X GPS HAT or L76X module) | position, 9600 baud |
-| 1 | **CP2102 USB-to-serial adapter** (USB-C or Micro-USB) | serial console, connection to the PC app |
+| 1 | **CP2102 USB-to-serial adapter** (USB-C or Micro-USB) | serial console, connection to the PC app (not needed with the carrier board, it has a USB console on board) |
 | 1 | microSD card, at least 16 GB, class A1 | operating system of the node |
 
 ## Antennas

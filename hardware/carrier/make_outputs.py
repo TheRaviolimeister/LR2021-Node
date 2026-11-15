@@ -55,8 +55,24 @@ print("  ", kinds)
 # ground pads the planes did not reach: generate_board.py links them with a track in the next run
 gnd = sorted({m.group(2) + "." + m.group(1) for u in unconn for it in u.get("items", [])
               for m in [re.search(r"pad (\S+) \[GND\] of (\S+)", it.get("description", ""))] if m})
+if any(all(it.get("description", "").startswith("Zone [GND]") for it in u.get("items", [])) for u in unconn):
+    # a piece of a ground plane is cut off: link the ground pads that sit on the small pieces
+    b_ = pcbnew.LoadBoard(PCB)
+    for z in b_.Zones():
+        L = pcbnew.B_Cu                      # the bottom plane should be one piece
+        if not z.IsOnLayer(L):
+            continue
+        ps = z.GetFilledPolysList(L)
+        areas = sorted(range(ps.OutlineCount()), key=lambda k: -ps.Outline(k).Area())
+        for k in areas[1:]:
+            poly = ps.Outline(k)
+            for fp in b_.GetFootprints():
+                for p in fp.Pads():
+                    if p.GetNetname() == "GND" and p.IsOnLayer(L) and poly.PointInside(p.GetPosition()):
+                        gnd.append(fp.GetReference() + "." + p.GetNumber())
+    gnd = sorted(set(gnd))
 if gnd:
-    old = json.load(open(os.path.join(HERE, ".gnd_links.json"))) if os.path.exists(os.path.join(HERE, ".gnd_links.json")) else []
+    old =json.load(open(os.path.join(HERE, ".gnd_links.json"))) if os.path.exists(os.path.join(HERE, ".gnd_links.json")) else []
     json.dump(sorted(set(old) | set(gnd)), open(os.path.join(HERE, ".gnd_links.json"), "w"))
     print("   ground pads without plane connection:", gnd)
 
