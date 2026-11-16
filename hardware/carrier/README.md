@@ -112,15 +112,18 @@ USB data lines have a fixed fan-out (0.5 mm pin pitch).
   **Without a filter module the 868 MHz path is open:** bridge pin 2 and pin 4 of J22 with a short
   wire instead.
 - **Control from ESP32 A:** GPIO42 = CSD (front end on), GPIO41 = CPS (LNA on / bypass),
-  GPIO40 = CTX (transmit via the PA), each through 1 kΩ. A 10 kΩ pull-down on CSD keeps the front end
+  GPIO40 = CTX (transmit via the PA), each through 1 kΩ. The three lines run in parallel next to the
+  filter socket and cross the bus of ESP32 A once, with one via each, on the bottom layer. A 10 kΩ pull-down on CSD keeps the front end
   switched off while the ESP32 starts; the firmware detects the front end by this pull-down.
 - **Firmware (1.1.0 or newer required):**
   - The transmit power set by the app is the power at the connector. The firmware converts it into
     the LR2021 drive level: from 14 dBm upwards the signal goes through the PA, below that through
-    the bypass (up to about 5 dBm).
+    the bypass (up to about 3 dBm; requests between 4 and 13 dBm are sent with these 3 dBm, never more).
   - **The legal limits are enforced in the firmware**, whatever the app asks for: 27 dBm (500 mW ERP)
     in 869.40–869.65 MHz (Meshtastic EU_868, MeshCore), 14 dBm (25 mW ERP) everywhere else; both
-    assume an antenna gain of up to 2.15 dBi. The hardware alone could do more (+30 dBm).
+    assume an antenna gain of up to 2.15 dBi. The hardware alone could do more (+30 dBm). At the band
+    edges the firmware allows 40 kHz for the crystal correction of the app (the frequency it programs
+    is offset by the measured crystal error, the transmitted one is not).
   - **LNA automatic (default):** every 5 minutes the firmware measures the noise floor with and
     without the LNA. If the receiver's own noise limits the sensitivity (quiet site), the LNA stays
     on; if the noise from outside dominates (city, a transmitter nearby), the LNA would not improve
@@ -153,7 +156,9 @@ USB data lines have a fixed fan-out (0.5 mm pin pitch).
   USB-C receptacle, MOSFETs, diodes, SE2435L, TLV75901 – all taken from the data sheets), including
   the complete topology of the front end (match, traps, low-pass, supply feeds, control lines) and
   its supply voltage (4.68 V, recommended 4.0–4.8 V);
-- no net with only one connection, no short, all nets connected, minimum distance between parts
+- no net with only one connection, no short, all nets connected; in addition to the design rule check
+  `check_board.py` compares every piece of copper (tracks, vias, pads, planes) with every other one of a
+  different net and reports anything touching or closer than 0.15 mm; minimum distance between parts
   (0.25 mm between the outlines; small passives and the front-end chips may touch outlines, which
   still leaves at least 0.5 mm between the bodies);
 - RF lines: 48.5–51.9 Ω for the JLCPCB 1.6 mm stack-up (εr 4.2–4.8), ground plane continuous under

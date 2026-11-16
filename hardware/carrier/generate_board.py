@@ -1153,11 +1153,33 @@ FIXED["GND"] += [(F, 0.25, [PP("U8", 8), U(-0.75, 1.0)]), (F, 0.2, [PP("U8", 7),
                  (F, 0.3, [PP("U9", 3), (LDO_X, PP("U9", 3)[1])])]
 FIXED["GND"] += [("via", U(i * 0.85, j * 0.85)) for i in (-1, 0, 1) for j in (-1, 0, 1)]     # PA heat to the bottom
 FIXED["GND"] += [("via", (LDO_X, LDO_Y - 0.4)), ("via", (LDO_X, LDO_Y + 0.4))]
-FIXED["CSD_A"] = [(F, 0.2, [PP("R34", 1), PP("R37", 1)])]
+# control lines ESP32 A -> front end: three parallel lanes left of the series resistors, down past the
+# filter socket, then one via each and straight on the bottom layer to the ESP32 pins (the bus, 3V3 and
+# UART lines of ESP32 A leave its socket to the right here, so the crossing is done once, underneath).
+# CSD runs in the channel between the two J3 pin rows, CPS and CTX right of them.
+_j3 = lambda gpio_pad: PP("U1", gpio_pad)            # pad on the 25.4 mm row (x = X_DKA + 25.4)
+_xa = X_DKA + 25.4 - 1.27                           # channel between the J3 rows
+_yv = 37.0                                          # via row, just above the ESP32 A bus lanes
+_r34, _r35, _r36 = PP("R34", 1), PP("R35", 1), PP("R36", 1)
+FIXED["CSD_A"] = [(F, 0.2, [_r34, PP("R37", 1)]),
+                  (F, 0.2, [_r34, (32.0, _r34[1]), (32.0, 20.0), (_xa, 20.0 + _xa - 32.0), (_xa, _yv)]),
+                  ("via", (_xa, _yv)),
+                  (B, 0.2, [(_xa, _yv), (_xa, _j3(28)[1]), _j3(28)])]
+FIXED["CPS_A"] = [(F, 0.2, [_r35, (32.6, _r35[1]), (32.6, 20.0), (33.6, 21.0), (33.6, 27.5), (36.6, 30.5), (36.6, _yv)]),
+                  ("via", (36.6, _yv)),
+                  (B, 0.2, [(36.6, _yv), (36.6, _j3(29)[1]), _j3(29)])]
+FIXED["CTX_A"] = [(F, 0.2, [_r36, (_r36[0], 20.0), (_r36[0] + 0.9, 20.9), (_r36[0] + 0.9, 27.0),
+                            (_r36[0] + 0.9 + 3.15, 30.15), (_r36[0] + 0.9 + 3.15, _yv + 0.8)]),
+                  ("via", (_r36[0] + 0.9 + 3.15, _yv + 0.8)),
+                  (B, 0.2, [(_r36[0] + 0.9 + 3.15, _yv + 0.8), (_r36[0] + 0.9 + 3.15, _j3(30)[1]), _j3(30)])]
+# both alternative J3 rows (22.86 / 25.4 mm) of these three pins are tied together on the top layer
+for _n, _pad in (("CSD_A", 28), ("CPS_A", 29), ("CTX_A", 30)):
+    _y = PP("U1", _pad)[1]
+    FIXED[_n].append((F, 0.25, [(X_DKA + 22.86, _y), (X_DKA + 25.4, _y)]))
 FIXED["GND"] += [(F, 0.3, [PP("C9", 2), (PP("C9", 2)[0] + 0.9, PP("C9", 2)[1])]),
                  ("via", (PP("C9", 2)[0] + 0.9, PP("C9", 2)[1])),
                  (F, 0.3, [PP("C32", 2), U(5.45, -3.0)]), ("via", U(5.45, -3.0))]
-FIXED_NETS = [n for n in FIXED if n not in ("GND", "CSD_A")]
+FIXED_NETS = [n for n in FIXED if n != "GND"]
 for name, items in FIXED.items():
     nid = net_ids[name]
     for it in items:

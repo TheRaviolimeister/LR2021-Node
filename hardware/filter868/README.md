@@ -18,7 +18,8 @@ the 868 MHz front end (SE2435L):
 | Loss | 2.5 dB typical, 3.5 dB max. (868–870 MHz) |
 | Rejection | 40–45 dB below 845 MHz, 45–55 dB from 883 MHz, 35–40 dB at 1.2–2 GHz |
 | Max. power | 13 dBm (18 dBm at 10 % duty cycle) – the firmware keeps the drive level below 8 dBm |
-| Board | 13.2 × 9.0 mm, two layers, 1.6 mm, 50 Ω coplanar lines |
+| Board | 13.2 × 9.0 mm, two layers, 1.6 mm, short coplanar lines (5 mm, about 55 Ω) |
+| Footprint | KiCad `Filter_SAW_Epcos_DCC6C_3x3mm` (EPCOS app note 93, 1.2 mm pitch) |
 | Connector | 1×5 pin header 2.54 mm: GND, port 1, GND, port 2, GND |
 
 868.0–870.0 MHz covers Meshtastic EU_868 (869.525 MHz), MeshCore (869.618 MHz), the 500 mW sub-band

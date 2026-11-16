@@ -30,7 +30,7 @@ MM = pcbnew.FromMM
 W, H = 13.2, 9.0                   # board size
 P0 = (1.52, 1.5)                   # header pin 1 (pins along +x, 2.54 mm)
 SAW = (W / 2, 5.6)                 # centre of the SAW filter
-LINE_W, GAP = 1.0, 0.25            # grounded coplanar line on 1.6 mm FR4: about 52 ohm
+LINE_W, GAP = 0.6, 0.2             # grounded coplanar line on 1.6 mm FR4: about 55 ohm (5 mm long)
 
 
 def V(x, y):
@@ -70,41 +70,14 @@ def text(t, x, y, size=0.8, layer=pcbnew.F_SilkS, mirror=False):
     board.Add(o)
 
 
-# ---- SAW filter footprint (EPCOS/Qualcomm DCC6C, 3.0 x 3.0 mm): pins 1-3 left column top to bottom,
-# 4-6 right column bottom to top; 2 = input, 5 = output, 1/3/4/6 = case ground (B3725 data sheet).
-saw = pcbnew.FOOTPRINT(board)
-saw.SetFPID(pcbnew.LIB_ID("LR2021", "SAW_DCC6C_3x3mm"))
+# ---- SAW filter: EPCOS/Qualcomm DCC6C (3.0 x 3.0 mm), KiCad library footprint after EPCOS app note 93:
+# 1.2 mm pitch, pins 1-3 left column top to bottom, 4-6 right column bottom to top;
+# 2 = input, 5 = output, 1/3/4/6 = case ground (B3725 data sheet).
+saw = pcbnew.FootprintLoad(os.path.join(LIB, "Filter.pretty"), "Filter_SAW_Epcos_DCC6C_3x3mm")
 saw.SetReference("FL1")
 saw.SetValue("B39871B3725U410")
 saw.Reference().SetVisible(False)
 saw.Value().SetVisible(False)
-for num, (x, y) in {1: (-1.075, -1.1), 2: (-1.075, 0.0), 3: (-1.075, 1.1),
-                    4: (1.075, 1.1), 5: (1.075, 0.0), 6: (1.075, -1.1)}.items():
-    p = pcbnew.PAD(saw)
-    p.SetNumber(str(num))
-    p.SetAttribute(pcbnew.PAD_ATTRIB_SMD)
-    p.SetShape(pcbnew.PAD_SHAPE_RECT)
-    p.SetSize(V(0.95, 0.7))
-    p.SetLayerSet(pcbnew.PAD.SMDMask())
-    p.SetPosition(V(x, y))
-    saw.Add(p)
-for (a, b) in (((-1.6, -1.6), (1.6, -1.6)), ((1.6, -1.6), (1.6, 1.6)), ((1.6, 1.6), (-1.6, 1.6)),
-               ((-1.6, 1.6), (-1.6, -1.6))):
-    for layer, w in ((pcbnew.F_CrtYd, 0.05), (pcbnew.F_Fab, 0.1)):
-        s = pcbnew.PCB_SHAPE(saw)
-        s.SetShape(pcbnew.SHAPE_T_SEGMENT)
-        s.SetStart(V(*a))
-        s.SetEnd(V(*b))
-        s.SetLayer(layer)
-        s.SetWidth(MM(w))
-        saw.Add(s)
-dot = pcbnew.PCB_SHAPE(saw)                       # pin 1 mark
-dot.SetShape(pcbnew.SHAPE_T_CIRCLE)
-dot.SetCenter(V(-2.1, -1.6))
-dot.SetEnd(V(-1.95, -1.6))
-dot.SetLayer(pcbnew.F_SilkS)
-dot.SetWidth(MM(0.15))
-saw.Add(dot)
 saw.SetPosition(V(*SAW))
 board.Add(saw)
 
@@ -162,18 +135,16 @@ for hp, sp, n in ((2, 2, p1), (4, 5, p2)):
     b = pad_pos(saw, sp)
     knee = (a[0], b[1])
     track(n, LINE_W, a, knee)
-    track(n, 0.6, knee, b)
-# ground vias: next to every SAW ground pad, along both lines and in the corners
+    track(n, LINE_W, knee, b)
+# ground: two vias between the pad columns, the ground pads tied to them, vias along the lines and
+# in the corners
 sx, sy = SAW
-for x, y in ((sx - 1.075, sy - 2.0), (sx + 1.075, sy - 2.0), (sx - 1.075, sy + 2.05), (sx + 1.075, sy + 2.05),
-             (sx, sy - 1.1), (sx, sy + 1.1), (sx, sy),
-             (P0[0] + 2.54 - 1.45, 4.3), (P0[0] + 7.62 + 1.45, 4.3),
+for x, y in ((sx, sy - 0.6), (sx, sy + 0.6), (sx - 1.4, sy - 2.6), (sx + 1.4, sy - 2.6),
+             (P0[0] + 2.54 - 1.25, 4.3), (P0[0] + 7.62 + 1.25, 4.3),
              (0.8, 8.2), (W - 0.8, 8.2), (0.8, 4.6), (W - 0.8, 4.6)):
     via(x, y)
-# ground copper under the SAW between its pads (centre ground pad pair connects through the vias)
-for num in (1, 3, 4, 6):
-    x, y = pad_pos(saw, num)
-    track(gnd, 0.5, (x, y), (sx, sy - 1.1 if y < sy else sy + 1.1))
+for num, (vx, vy) in ((3, (sx, sy + 0.6)), (4, (sx, sy + 0.6)), (6, (sx, sy - 0.6)), (1, (sx, sy - 0.6))):
+    track(gnd, 0.4, pad_pos(saw, num), (vx, vy))
 
 # outline
 for a, b in (((0, 0), (W, 0)), ((W, 0), (W, H)), ((W, H), (0, H)), ((0, H), (0, 0))):
@@ -200,8 +171,8 @@ for layer in (pcbnew.F_Cu, pcbnew.B_Cu):
     board.Add(z)
 
 text("868 FILTER", W / 2, 8.2, 0.8)
-text("868-870 MHz SAW", W / 2, 2.0, 0.6, pcbnew.B_SilkS, mirror=True)
-text("LR2021 Node", W / 2, 3.0, 0.6, pcbnew.B_SilkS, mirror=True)
+text("868-870 MHz SAW", W / 2, 6.9, 0.8, pcbnew.B_SilkS, mirror=True)
+text("LR2021 Node", W / 2, 8.1, 0.8, pcbnew.B_SilkS, mirror=True)
 board.Save(OUT_PCB)
 b2 = pcbnew.LoadBoard(OUT_PCB)
 pcbnew.ZONE_FILLER(b2).Fill(b2.Zones())
@@ -236,7 +207,7 @@ shutil.rmtree(gerb)
 with open(os.path.join(FAB, "bom.csv"), "w", newline="") as f:
     w = csv.writer(f)
     w.writerow(["Comment", "Designator", "Footprint", "LCSC Part #"])
-    w.writerow(["B39871B3725U410 (SAW 869 MHz, 868-870 MHz)", "FL1", "SAW_DCC6C_3x3mm", "C2651001"])
+    w.writerow(["B39871B3725U410 (SAW 869 MHz, 868-870 MHz)", "FL1", "Filter_SAW_Epcos_DCC6C_3x3mm", "C2651001"])
 with open(os.path.join(FAB, "cpl.csv"), "w", newline="") as f:
     w = csv.writer(f)
     w.writerow(["Designator", "Mid X", "Mid Y", "Layer", "Rotation"])

@@ -61,8 +61,11 @@ static bool feDetect() {
 }
 
 // Gesetzliche Grenze an der Buchse (EU SRD, ERC/REC 70-03; ERP mit 0-dBd-Antenne = 2,15 dBi)
+// Die App programmiert die Frequenz mit der Korrektur des Quarzfehlers des Moduls (gemessen, typ. +30 kHz);
+// die tatsächlich gesendete Frequenz liegt um diesen Betrag tiefer. Deshalb gilt eine Toleranz von
+// FE_FREQ_TOL_HZ (40 kHz = 46 ppm) an den Bandgrenzen.
 static int8_t legalMaxDbm(uint32_t f, uint32_t bw) {
-  uint32_t lo = f - bw / 2, hi = f + bw / 2;
+  uint32_t lo = f - bw / 2 + FE_FREQ_TOL_HZ, hi = f + bw / 2 - FE_FREQ_TOL_HZ;
   if (lo >= 869400000UL && hi <= 869650000UL) return 27;   // 500 mW ERP
   return 14;                                               // übrige 863–870 MHz: 25 mW ERP
 }
@@ -255,7 +258,8 @@ static int16_t forceFrontEndCal(uint32_t f) {
 
 // Frontend: gewünschte Leistung an der Buchse -> LR2021-Pegel. Unter der kleinsten PA-Leistung
 // (LR2021-Minimum + PA-Verstärkung - Filter, etwa 14 dBm) läuft das Senden über den Bypass;
-// dort reicht der Pegel bis etwa 5 dBm. Die gesetzliche Grenze der Frequenz gilt immer.
+// dort reicht der Pegel bis etwa 3 dBm (Wünsche zwischen 4 und 13 dBm werden mit diesen 3 dBm erfüllt,
+// nie mit mehr). Die gesetzliche Grenze der Frequenz gilt immer.
 int8_t Modem::txDrive(uint32_t f, uint32_t bw, int8_t outDbm) {
   bool is24 = f > 2000000000UL;
   if (!g_fe || is24) {
@@ -378,6 +382,7 @@ void Modem::measureHealth() {
 void Modem::wake() {
   if (rs_ == RS_SLEEP) {
     radio.standby();
+    feRx();                                  // Frontend wieder an (sonst lauscht z. B. CAD ins Leere)
     rs_ = RS_STANDBY;
   }
 }

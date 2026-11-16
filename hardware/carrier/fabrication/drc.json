@@ -1,7 +1,7 @@
 {
     "$schema": "https://schemas.kicad.org/drc.v1.json",
     "coordinate_units": "mm",
-    "date": "2026-11-16T16:20:00+0100",
+    "date": "2026-11-16T17:01:20+0100",
     "included_severities": [
         "error",
         "warning"
@@ -20,7 +20,7 @@
                         "x": 37.86,
                         "y": 13.75
                     },
-                    "uuid": "ee42c4f1-0e9c-4c34-b64f-30ace1588c49"
+                    "uuid": "5f808cb8-3eb5-466e-a0c0-c3d7013bbb54"
                 }
             ],
             "severity": "warning",
@@ -30,12 +30,12 @@
             "description": "The current configuration does not include the footprint library 'LR2021'.",
             "items": [
                 {
-                    "description": "Footprint U4",
+                    "description": "Footprint U2",
                     "pos": {
-                        "x": 113.0,
-                        "y": 28.5
+                        "x": 137.6,
+                        "y": 44.36
                     },
-                    "uuid": "5b42490c-4848-4b00-a152-df42c66558ae"
+                    "uuid": "33bbe723-fd21-4eb2-ad19-a04693035973"
                 }
             ],
             "severity": "warning",
@@ -50,22 +50,7 @@
                         "x": 59.0,
                         "y": 28.5
                     },
-                    "uuid": "68eb168e-a383-45f0-8858-9f626a779032"
-                }
-            ],
-            "severity": "warning",
-            "type": "lib_footprint_issues"
-        },
-        {
-            "description": "The current configuration does not include the footprint library 'LR2021'.",
-            "items": [
-                {
-                    "description": "Footprint U2",
-                    "pos": {
-                        "x": 137.6,
-                        "y": 44.36
-                    },
-                    "uuid": "90fe0077-4c03-434a-9272-d109b07e7a42"
+                    "uuid": "4b871762-241d-4305-9566-7d4ccc05f413"
                 }
             ],
             "severity": "warning",
@@ -80,7 +65,7 @@
                         "x": 9.0,
                         "y": 44.36
                     },
-                    "uuid": "98689228-2e1b-4194-b200-96c06852bc46"
+                    "uuid": "737eeafb-6f5d-494d-a508-2e68a0068610"
                 }
             ],
             "severity": "warning",
@@ -95,7 +80,22 @@
                         "x": 53.5,
                         "y": 75.7
                     },
-                    "uuid": "b20ac272-13c0-4832-80d4-51c3a9e43a28"
+                    "uuid": "78d71e45-3a09-47df-a1c3-abc029a0816c"
+                }
+            ],
+            "severity": "warning",
+            "type": "lib_footprint_issues"
+        },
+        {
+            "description": "The current configuration does not include the footprint library 'LR2021'.",
+            "items": [
+                {
+                    "description": "Footprint U4",
+                    "pos": {
+                        "x": 113.0,
+                        "y": 28.5
+                    },
+                    "uuid": "fd6caa56-8907-43b7-a56b-c90756e7754f"
                 }
             ],
             "severity": "warning",

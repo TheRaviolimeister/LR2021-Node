@@ -257,6 +257,26 @@ for core, k, sma in (("U3", "1", "J14"), ("U4", "1", "J15"), ("U4", "9", "J16"))
 
 if net_of("J13", "2") != "GND":
     errors.append("J13 body not GND")
+# polarity (KiCad diode/LED footprints: pad 1 = cathode; SOT-23 MOSFET: 1 = G, 2 = S, 3 = D)
+v5 = net_of("F1", "2")
+if net_of("D1", "1") != v5 or net_of("D1", "2") != "GND":
+    errors.append("TVS D1: cathode must be on 5 V, anode on GND")
+if net_of("D4", "1") != "GND" or net_of("R4", "1") != v5 or net_of("R4", "2") != net_of("D4", "2"):
+    errors.append("power LED D4: 5 V -> R4 -> anode, cathode GND")
+for led, r, sig in (("D5", "R29", ("U6", "2")), ("D6", "R30", ("U5", "8"))):
+    if net_of(led, "2") != net_of("U5", "1") or net_of(r, "1") != net_of(led, "1") or net_of(r, "2") != net_of(*sig):
+        errors.append(f"{led}: 3.3 V -> anode, cathode -> {r} -> {sig}")
+for q in ("Q1", "Q2"):            # reverse-polarity P-MOSFETs: drain = input, source = output, gate pulled to GND
+    if net_of(q, "3") != net_of("J1", "1") or net_of(q, "2") != net_of("F1", "1") or net_of(q, "1") != net_of("R3", "1") \
+            or net_of("R3", "2") != "GND":
+        errors.append(f"{q}: drain/source/gate of the reverse-polarity protection wrong")
+expect_same(("J1", "1"), ("J5", "A9"), "J1 + and USB-C VBUS on the same input")
+for cc, r in (("A5", "R1"), ("B5", "R2")):
+    if net_of(r, "1") != net_of("J5", cc) or net_of(r, "2") != "GND":
+        errors.append(f"USB-C power {cc}: 5.1k to GND missing")
+if net_of("J1", "2") != "GND":
+    errors.append("J1 pin 2 not GND")
+series(("F1", "1"), ("F1", "2"), "F1", "fuse between protected input and 5 V")
 
 print("connections checked against the pin names:")
 for r in rows:
@@ -331,4 +351,53 @@ print("\nparts too close (courtyards overlap; or < 0.25 mm apart unless both are
       len(close))
 for d, a, b in sorted(close):
     print(f"   {a}-{b}: {d:.2f} mm")
+
+# ---- copper of different nets touching or closer than 0.15 mm (independent of the KiCad DRC) ----------
+import collections
+items = []
+for L in (pcbnew.F_Cu, pcbnew.B_Cu):
+    for t in board.GetTracks():
+        if t.IsOnLayer(L):
+            items.append((L, t.GetNetCode(), t.GetBoundingBox(), t.GetEffectiveShape(L), t.GetNetname(), False))
+    for fp in board.GetFootprints():
+        for p in fp.Pads():
+            if p.IsOnLayer(L) and p.GetAttribute() != pcbnew.PAD_ATTRIB_NPTH:
+                items.append((L, p.GetNetCode(), p.GetBoundingBox(), p.GetEffectiveShape(L),
+                              f"{fp.GetReference()}.{p.GetNumber()} {p.GetNetname()}", False))
+    for z in board.Zones():
+        if z.IsOnLayer(L):
+            polys = z.GetFilledPolysList(L)
+            for k in range(polys.OutlineCount()):
+                sp = pcbnew.SHAPE_POLY_SET(polys.Outline(k))
+                items.append((L, z.GetNetCode(), sp.BBox(), sp, "plane " + z.GetNetname(), True))
+grid = collections.defaultdict(list)
+cell = pcbnew.FromMM(2.0)
+for k, it in enumerate(items):
+    if it[5]:
+        continue
+    bb = it[2]
+    for i in range(bb.GetLeft() // cell - 1, bb.GetRight() // cell + 2):
+        for j in range(bb.GetTop() // cell - 1, bb.GetBottom() // cell + 2):
+            grid[(it[0], i, j)].append(k)
+pairs = set()
+for ks in grid.values():
+    for a_, b_ in itertools.combinations(ks, 2):
+        pairs.add((min(a_, b_), max(a_, b_)))
+for zk, z in enumerate(items):
+    if z[5]:
+        for k, it in enumerate(items):
+            if not it[5] and it[0] == z[0] and z[2].Intersects(it[2]):
+                pairs.add((zk, k))
+copper_err = []
+for a_, b_ in pairs:
+    A, Bq = items[a_], items[b_]
+    if A[1] == Bq[1] or (A[1] == 0 and Bq[1] == 0):
+        continue
+    if A[3].Collide(Bq[3], pcbnew.FromMM(0.149)):
+        what = "SHORT" if A[3].Collide(Bq[3], 0) else "gap < 0.15 mm"
+        copper_err.append(f"{what}: {A[4]} / {Bq[4]} ({'top' if A[0] == pcbnew.F_Cu else 'bottom'})")
+print(f"\ncopper of different nets touching or closer than 0.15 mm: {len(copper_err)} ({len(items)} copper items)")
+for e in copper_err:
+    print("   !!", e)
+errors += copper_err
 sys.exit(1 if errors else 0)

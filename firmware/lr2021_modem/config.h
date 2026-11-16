@@ -77,6 +77,7 @@
 #define FE_OUT_MAX_DBM      30          // Hardware-Maximum an der Antennenbuchse
 #define FE_DRIVE_MAX_DBM    8           // LR2021-Pegel höchstens (TR-Eingang des SE2435L: max. +10 dBm)
 #define FE_LEGAL_CAP        1           // EU-SRD-Grenzen immer einhalten (ERP, Antenne bis 2,15 dBi)
+#define FE_FREQ_TOL_HZ      40000UL     // Toleranz an den Bandgrenzen für die Quarzkorrektur der App
 #define FE_AUTO_PERIOD_MS   300000UL    // LNA-Automatik: alle 5 Minuten Rauschboden mit/ohne LNA messen
 
 // 2,4-GHz-Bereich (beide Module)
