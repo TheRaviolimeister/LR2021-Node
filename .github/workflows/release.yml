@@ -169,6 +169,7 @@ jobs:
   ios:
     needs: [version, test]
     runs-on: macos-latest
+    timeout-minutes: 60
     defaults:
       run:
         working-directory: App/source
@@ -263,6 +264,12 @@ jobs:
 
   release:
     needs: [version, android, windows, linux, ios, firmware, node]
+    # iOS is optional: if no macOS runner is available, the release goes out without a new iOS build and the
+    # iOS app (AltStore/SideStore source) stays on its previous version; rebuild later with workflow_dispatch
+    if: >-
+      ${{ !cancelled() && needs.version.result == 'success' && needs.android.result == 'success' &&
+          needs.windows.result == 'success' && needs.linux.result == 'success' &&
+          needs.firmware.result == 'success' && needs.node.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -274,6 +281,13 @@ jobs:
         run: |
           v=${{ needs.version.outputs.v }}
           repo=${{ github.repository }}
+          mkdir -p keep
+          if [ ! -f out/LR2021-Node-ios.ipa ]; then
+            echo "no iOS build in this run: the mirror keeps the previous iOS app and AltStore source"
+            curl -fsSL --retry 5 -o keep/LR2021-Node-ios.ipa "https://raw.githubusercontent.com/$repo/dist/LR2021-Node-ios.ipa" || rm -f keep/LR2021-Node-ios.ipa
+            curl -fsSL --retry 5 -o keep/altstore-source.json "https://raw.githubusercontent.com/$repo/dist/altstore-source.json" || rm -f keep/altstore-source.json
+            exit 0
+          fi
           size=$(stat -c %s out/LR2021-Node-ios.ipa)
           date=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           cat > out/altstore-source.json <<EOF
@@ -334,6 +348,7 @@ jobs:
           EOF
           mkdir dist
           cp out/* dist/
+          cp keep/* dist/ 2>/dev/null || true
           mv out-latest.json dist/latest.json
           cd dist
           git init -q -b dist
