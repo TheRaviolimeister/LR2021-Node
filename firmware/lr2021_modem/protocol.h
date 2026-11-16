@@ -30,7 +30,8 @@ enum : uint8_t {
   CMD_FACTORY       = 0x14,  // gespeicherte Werte löschen, Neustart
   CMD_SET_AUTORX    = 0x15,  // u8: nach dem Start sofort empfangen
   CMD_FE_GET        = 0x16,  // -> FeInfo (868-MHz-Frontend)
-  CMD_FE_SET        = 0x17,  // u8 lna_mode (0 automatisch, 1 an, 2 aus), u8 speichern -> FeInfo
+  CMD_FE_SET        = 0x17,  // u8 lna_mode (0 automatisch, 1 an, 2 aus, 0xFF unverändert), u8 flags
+                             // (bit0 speichern, bit1 Kalibrierung auf Werkswerte) [, FeCal] -> FeInfo
   CMD_TX            = 0x20,  // u8 flags, u16 tx_id, daten  (flags bit0 = vorher Kanal prüfen / LBT)
   CMD_RX_START      = 0x21,  // dauerhaft empfangen
   CMD_STANDBY       = 0x22,
@@ -41,6 +42,11 @@ enum : uint8_t {
   CMD_RESET_STATS   = 0x31,
   CMD_RESET_RADIO   = 0x40,
   CMD_REBOOT        = 0x41,
+  // Firmware-Update über diese Verbindung (ab 1.2.0). Ablauf: BEGIN, DATA lückenlos ab Offset 0, END.
+  CMD_OTA_BEGIN     = 0x50,  // u32 size, u8 sha256[32] -> u16 max_chunk, u32 slot_size
+  CMD_OTA_DATA      = 0x51,  // u32 offset, 1..OTA_CHUNK_MAX Bytes -> u32 next_offset
+  CMD_OTA_END       = 0x52,  // -> (prüfen, Startpartition setzen, Antwort, dann Neustart)
+  CMD_OTA_ABORT     = 0x53,  // -> (Update verwerfen, Funk wieder an)
 };
 
 // Ereignisse
@@ -67,6 +73,11 @@ enum : int16_t {
   ST_CHANNEL_BUSY   = -10,   // LBT: Kanal belegt
   ST_NOT_READY      = -11,   // Funkchip nicht initialisiert
   ST_TIMEOUT        = -12,
+  ST_IMAGE_INVALID  = -13,   // OTA: kein ESP32-S3-Programm, zu groß, zu alte Version, Kennung fehlt
+  ST_WRONG_ROLE     = -14,   // OTA: Programm für das andere Modem (A/B)
+  ST_VERIFY_FAILED  = -15,   // OTA: SHA-256 oder Prüfung des Programms falsch
+  ST_FLASH_ERROR    = -16,   // OTA: Fehler beim Schreiben (+ i32 esp_err_t)
+  ST_NO_SESSION     = -17,   // OTA: kein Update begonnen
 };
 
 enum : uint8_t { MODEM_LORA = 1, MODEM_FSK = 2 };
@@ -131,6 +142,20 @@ struct FeInfo {
   int8_t   legal_dbm;      // gesetzliche Grenze für die aktuelle Frequenz
   int8_t   drive_dbm;      // eingestellter LR2021-Pegel
   int8_t   out_max_dbm;    // Hardware-Maximum
+  // ab 1.2.0 (die ersten 12 Bytes bleiben gleich): verwendete Kalibrierung, alles in 0,1 dB
+  int16_t  pa_gain10;      // Verstärkung des PA
+  int16_t  filter_loss10;  // Dämpfung des Steckfilters (0 ohne Filter, Pins gebrückt)
+  int16_t  lna_gain10;     // Verstärkung des LNA
+  int16_t  bypass_loss10;  // Dämpfung des Bypass
+  uint8_t  cal_flags;      // bit0 Werte weichen von den Werkswerten ab, bit1 im Flash gespeichert
+};
+// Kalibrierung in FE_SET (nach den 2 Bytes mode/flags). FE_CAL_KEEP = Wert nicht ändern.
+#define FE_CAL_KEEP INT16_MIN
+struct FeCal {
+  int16_t  pa_gain10;
+  int16_t  filter_loss10;
+  int16_t  lna_gain10;
+  int16_t  bypass_loss10;
 };
 struct Stats {
   uint32_t rx_ok;
@@ -144,6 +169,10 @@ struct Stats {
   uint32_t cad_busy;
 };
 #pragma pack(pop)
+// Größen sind Teil des Protokolls (docs/modem-protocol.md) und dürfen sich nicht unbemerkt ändern
+static_assert(sizeof(LoraCfg) == 16 && sizeof(FskCfg) == 32 && sizeof(Limits) == 5, "Protokoll-Struktur");
+static_assert(sizeof(InfoBlock) == 31 && sizeof(Stats) == 36, "Protokoll-Struktur");
+static_assert(sizeof(FeInfo) == 21 && sizeof(FeCal) == 8, "Protokoll-Struktur");
 
 // ---- Hilfsfunktionen (header-only, auch für native Tests nutzbar) ----
 static inline uint16_t crc16_ccitt(const uint8_t* d, uint32_t n, uint16_t crc = 0xFFFF) {

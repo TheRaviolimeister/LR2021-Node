@@ -9,7 +9,7 @@ for /f %%T in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd-HHmm"'
 if not exist packages mkdir packages
 set "OUT=packages\lr2021-update-%STAMP%.tar.gz"
 set "TAR=%SystemRoot%\System32\tar.exe"
-for %%O in (lr2021-nothermal lr2021-uart34) do (
+for %%O in (lr2021-nothermal lr2021-uart34 lr2021-i2c1) do (
   if not exist source\overlay\%%O.dtbo (
     echo FEHLER: source\overlay\%%O.dtbo fehlt ^(wird von Build_Image.bat erzeugt^).
     goto ende
@@ -21,7 +21,7 @@ for %%O in (lr2021-nothermal lr2021-uart34) do (
   -C ..\rootfs etc/udev/rules.d/90-lr2021-usb-gadget.rules etc/udev/rules.d/91-lr2021-wlan.rules ^
      etc/systemd/system/serial-getty@.service.d/lr2021.conf ^
      etc/systemd/system/lr2021-hotspot.service usr/local/sbin/lr2021-hotspot ^
-  -C ..\overlay lr2021-nothermal.dtbo lr2021-uart34.dtbo
+  -C ..\overlay lr2021-nothermal.dtbo lr2021-uart34.dtbo lr2021-i2c1.dtbo
 if errorlevel 1 (
   echo FEHLER beim Packen.
 ) else (

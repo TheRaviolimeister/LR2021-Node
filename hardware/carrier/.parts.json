@@ -59,11 +59,11 @@
   "assemble": true,
   "footprint": "R_0603_1608Metric"
  },
- "C10": {
-  "value": "DNP",
-  "lcsc": "",
-  "assemble": false,
-  "footprint": "C_0603_1608Metric"
+ "L10": {
+  "value": "68nH",
+  "lcsc": "C162555",
+  "assemble": true,
+  "footprint": "L_0603_1608Metric"
  },
  "R22": {
   "value": "0R",
@@ -77,11 +77,11 @@
   "assemble": false,
   "footprint": "C_0603_1608Metric"
  },
- "C12": {
-  "value": "DNP",
-  "lcsc": "",
-  "assemble": false,
-  "footprint": "C_0603_1608Metric"
+ "L11": {
+  "value": "15nH",
+  "lcsc": "C98006",
+  "assemble": true,
+  "footprint": "L_0603_1608Metric"
  },
  "R23": {
   "value": "0R",
@@ -95,11 +95,11 @@
   "assemble": false,
   "footprint": "C_0603_1608Metric"
  },
- "C14": {
-  "value": "DNP",
-  "lcsc": "",
-  "assemble": false,
-  "footprint": "C_0603_1608Metric"
+ "L12": {
+  "value": "15nH",
+  "lcsc": "C98006",
+  "assemble": true,
+  "footprint": "L_0603_1608Metric"
  },
  "R24": {
   "value": "0R",
@@ -113,11 +113,11 @@
   "assemble": false,
   "footprint": "C_0603_1608Metric"
  },
- "C16": {
-  "value": "DNP",
-  "lcsc": "",
-  "assemble": false,
-  "footprint": "C_0603_1608Metric"
+ "L13": {
+  "value": "100nH",
+  "lcsc": "C98010",
+  "assemble": true,
+  "footprint": "L_0603_1608Metric"
  },
  "U8": {
   "value": "SE2435L-R",

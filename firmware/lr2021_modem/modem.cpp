@@ -1,4 +1,5 @@
 #include "modem.h"
+#include "fe_calc.h"
 #include <Preferences.h>
 #include <stdarg.h>
 
@@ -32,6 +33,26 @@ static int8_t g_feDrive = 0, g_feOut = 0, g_feLegal = 0;
 static int16_t g_feNoiseOn10 = 0, g_feNoiseOff10 = 0;
 static uint32_t g_feNextEval = 0;
 
+// Kalibrierung des Frontends in 0,1 dB (Startwerte aus config.h, gemessene Werte im Flash, Schlüssel "fecal")
+static const FeCalValues FE_CAL_DEFAULT = { FE_PA_GAIN_DB * 10, FE_FILTER_LOSS_DB * 10, FE_LNA_GAIN_DB * 10,
+                                            FE_BYPASS_LOSS_DB * 10 };
+static FeCalValues g_cal = FE_CAL_DEFAULT;
+static bool g_calStored = false;      // Werte stammen aus dem Flash
+static const uint16_t FE_CAL_MAGIC = 0x4346;   // "FC"
+#pragma pack(push, 1)
+struct FeCalPersist { uint16_t magic; FeCalValues v; };
+#pragma pack(pop)
+
+static bool calValid(const FeCalValues& c) {
+  return c.pa10 >= FE_CAL_PA_MIN10 && c.pa10 <= FE_CAL_PA_MAX10 &&
+         c.filt10 >= FE_CAL_FILT_MIN10 && c.filt10 <= FE_CAL_FILT_MAX10 &&
+         c.lna10 >= FE_CAL_LNA_MIN10 && c.lna10 <= FE_CAL_LNA_MAX10 &&
+         c.byp10 >= FE_CAL_BYP_MIN10 && c.byp10 <= FE_CAL_BYP_MAX10;
+}
+static bool calIsDefault(const FeCalValues& c) {
+  return c.pa10 == FE_CAL_DEFAULT.pa10 && c.filt10 == FE_CAL_DEFAULT.filt10 &&
+         c.lna10 == FE_CAL_DEFAULT.lna10 && c.byp10 == FE_CAL_DEFAULT.byp10;
+}
 static void fePins(uint8_t csd, uint8_t cps, uint8_t ctx) {
 #if PIN_FE_CSD >= 0
   digitalWrite(PIN_FE_CTX, ctx);
@@ -73,7 +94,7 @@ static int8_t legalMaxDbm(uint32_t f, uint32_t bw) {
 // Empfangsverstärkung vor dem LR2021 (für RSSI an der Antenne)
 static float feRxGainDb() {
   if (!g_fe) return 0.0f;
-  return (g_feLna ? FE_LNA_GAIN_DB : -FE_BYPASS_LOSS_DB) - FE_FILTER_LOSS_DB;
+  return ((g_feLna ? g_cal.lna10 : -g_cal.byp10) - g_cal.filt10) / 10.0f;
 }
 
 // höchste einstellbare Sub-GHz-Leistung: mit Frontend an der Buchse, sonst am LR2021
@@ -198,13 +219,24 @@ void Modem::begin(EventSink sink) {
     // gespeicherte Grenze aus der Zeit ohne Frontend (Chip-Maximum) auf das Frontend-Maximum heben
     if (lim_.max_pwr_subghz == DEF_MAX_PWR_SUBGHZ) lim_.max_pwr_subghz = FE_OUT_MAX_DBM;
     Preferences p;
-    if (p.begin("lrmodem", true)) { g_feMode = p.getUChar("fe", 0); p.end(); }
+    FeCalPersist cp;
+    size_t cn = 0;
+    if (p.begin("lrmodem", true)) {
+      g_feMode = p.getUChar("fe", 0);
+      if (p.isKey("fecal")) cn = p.getBytes("fecal", &cp, sizeof(cp));
+      p.end();
+    }
     if (g_feMode > 2) g_feMode = 0;
     g_feLna = (g_feMode != 2);
+    g_cal = FE_CAL_DEFAULT;
+    g_calStored = false;
+    if (cn == sizeof(cp) && cp.magic == FE_CAL_MAGIC && calValid(cp.v)) { g_cal = cp.v; g_calStored = true; }
     g_feNextEval = millis() + 20000;
     feRx();
-    log(0, "868-MHz-Frontend erkannt (PA bis %d dBm, LNA %s)", FE_OUT_MAX_DBM,
-        g_feMode == 0 ? "automatisch" : g_feMode == 1 ? "an" : "aus");
+    log(0, "868-MHz-Frontend erkannt (PA bis %d dBm, LNA %s, Kalibrierung %s: PA %.1f, Filter %.1f, LNA %.1f, Bypass %.1f dB)",
+        FE_OUT_MAX_DBM, g_feMode == 0 ? "automatisch" : g_feMode == 1 ? "an" : "aus",
+        g_calStored ? "gespeichert" : "Werkswerte", g_cal.pa10 / 10.0, g_cal.filt10 / 10.0, g_cal.lna10 / 10.0,
+        g_cal.byp10 / 10.0);
   }
   rxWanted_ = autoRx_;
   int16_t code = 0;
@@ -277,19 +309,13 @@ int8_t Modem::txDrive(uint32_t f, uint32_t bw, int8_t outDbm) {
   }
 #endif
   if (out > FE_OUT_MAX_DBM) out = FE_OUT_MAX_DBM;
-  const int paMin = RADIOLIB_LR2021_LF_POUT_MIN + FE_PA_GAIN_DB - FE_FILTER_LOSS_DB;
-  int d;
-  if (out >= paMin) {
-    g_fePa = true;
-    d = out - FE_PA_GAIN_DB + FE_FILTER_LOSS_DB;
-  } else {
-    g_fePa = false;
-    d = out + FE_BYPASS_LOSS_DB + FE_FILTER_LOSS_DB;
-  }
-  if (d > FE_DRIVE_MAX_DBM) d = FE_DRIVE_MAX_DBM;
-  if (d < RADIOLIB_LR2021_LF_POUT_MIN) d = RADIOLIB_LR2021_LF_POUT_MIN;
+  // Rechnung mit der Kalibrierung (0,1 dB, siehe fe_calc.h); LR2021-Pegel nie über FE_DRIVE_MAX_DBM
+  bool pa = false;
+  int actual = 0;
+  int d = feCalcDrive(out, g_cal, RADIOLIB_LR2021_LF_POUT_MIN, FE_DRIVE_MAX_DBM, &pa, &actual);
+  g_fePa = pa;
   g_feDrive = (int8_t)d;
-  g_feOut = (int8_t)(g_fePa ? d + FE_PA_GAIN_DB - FE_FILTER_LOSS_DB : d - FE_BYPASS_LOSS_DB - FE_FILTER_LOSS_DB);
+  g_feOut = (int8_t)actual;
   return g_feDrive;
 }
 
@@ -466,6 +492,7 @@ int16_t Modem::checkTxAllowed(uint16_t len, uint32_t* toaUs) {
 
 int16_t Modem::queueTx(uint16_t id, uint8_t flags, const uint8_t* data, uint16_t len) {
   if (len == 0 || len > RADIOLIB_LR2021_MAX_PACKET_LENGTH) return ST_BAD_LENGTH;
+  if (suspended_) { st_.tx_rejected++; return ST_BUSY; }
   if (modem_ == MODEM_LORA && (lora_.flags & 0x04) && len != lora_.implicit_len) return ST_BAD_LENGTH;
   if (modem_ == MODEM_FSK && (fsk_.flags & 0x02) && len != fsk_.fixed_len) return ST_BAD_LENGTH;
   int16_t st = checkTxAllowed(len, nullptr);
@@ -484,6 +511,7 @@ int16_t Modem::queueTx(uint16_t id, uint8_t flags, const uint8_t* data, uint16_t
 
 int16_t Modem::startRx(int16_t* rc) {
   if (!radioOk_) return ST_NOT_READY;
+  if (suspended_) return ST_BUSY;
   rxWanted_ = true;
   if (rs_ == RS_TX) return ST_OK;          // nach dem Senden geht es automatisch in den Empfang
   if (rs_ == RS_RX) return ST_OK;          // läuft schon
@@ -786,6 +814,7 @@ void Modem::handleIrq() {
 
 void Modem::loop() {
   if (!radioOk_) return;
+  if (suspended_) { g_irq = false; return; }     // Firmware-Update: Funk ruht
   bool pending = g_irq;
   g_irqSrc = "ISR";
   // Absicherung, falls eine Flanke verpasst wurde: IRQ-Pin direkt prüfen
@@ -895,13 +924,13 @@ void Modem::feEvaluate() {
   };
   float mOn = median(on, N), mOff = median(off, N);
   float d = mOn - mOff;
-  const float G = FE_LNA_GAIN_DB + FE_BYPASS_LOSS_DB;
+  const float G = (g_cal.lna10 + g_cal.byp10) / 10.0f;
   bool lna = g_feLna;
   if (mOn > -80.0f) lna = false;
   else if (d < G - 3.0f) lna = true;          // LNA bringt mehr als 3 dB
   else if (d > G - 1.0f) lna = false;         // LNA bringt weniger als 1 dB
-  g_feNoiseOn10 = (int16_t)((mOn - (FE_LNA_GAIN_DB - FE_FILTER_LOSS_DB)) * 10.0f);
-  g_feNoiseOff10 = (int16_t)((mOff + FE_BYPASS_LOSS_DB + FE_FILTER_LOSS_DB) * 10.0f);
+  g_feNoiseOn10 = (int16_t)(mOn * 10.0f - (g_cal.lna10 - g_cal.filt10));
+  g_feNoiseOff10 = (int16_t)(mOff * 10.0f + g_cal.byp10 + g_cal.filt10);
   if (lna != g_feLna) {
     g_feLna = lna;
     feRx();
@@ -922,21 +951,114 @@ void Modem::fillFe(FeInfo& f) {
   f.legal_dbm = g_fe ? g_feLegal : 0;
   f.drive_dbm = g_feDrive;
   f.out_max_dbm = subGhzMax();
+  f.pa_gain10 = g_cal.pa10;
+  f.filter_loss10 = g_cal.filt10;
+  f.lna_gain10 = g_cal.lna10;
+  f.bypass_loss10 = g_cal.byp10;
+  f.cal_flags = (calIsDefault(g_cal) ? 0 : 0x01) | (g_calStored ? 0x02 : 0);
 }
 
-int16_t Modem::setFeMode(uint8_t mode, bool save) {
-  if (mode > 2) return ST_BAD_PARAM;
+int16_t Modem::setFe(uint8_t mode, uint8_t flags, const FeCal* cal) {
+  // erst alles prüfen, dann ändern
+  if (mode > 2 && mode != 0xFF) return ST_BAD_PARAM;
+  bool save = flags & 0x01, reset = flags & 0x02;
+  bool calGiven = reset;
+  FeCalValues nc = reset ? FE_CAL_DEFAULT : g_cal;
+  if (cal) {
+    if (cal->pa_gain10 != FE_CAL_KEEP)     { nc.pa10 = cal->pa_gain10;       calGiven = true; }
+    if (cal->filter_loss10 != FE_CAL_KEEP) { nc.filt10 = cal->filter_loss10; calGiven = true; }
+    if (cal->lna_gain10 != FE_CAL_KEEP)    { nc.lna10 = cal->lna_gain10;     calGiven = true; }
+    if (cal->bypass_loss10 != FE_CAL_KEEP) { nc.byp10 = cal->bypass_loss10;  calGiven = true; }
+  }
+  if (!calValid(nc)) return ST_BAD_PARAM;
   if (!g_fe) return ST_NOT_READY;
-  g_feMode = mode;
-  if (mode == 1) g_feLna = true;
-  else if (mode == 2) g_feLna = false;
-  else g_feNextEval = millis() + 1000;        // automatisch: gleich messen
-  if (rs_ != RS_TX && rs_ != RS_SLEEP) feRx();
+  if (suspended_) return ST_BUSY;                 // Firmware-Update läuft
+  bool calChanged = memcmp(&nc, &g_cal, sizeof(nc)) != 0;
+  if (calChanged && rs_ == RS_TX) return ST_BUSY;     // nicht während eines Pakets umrechnen
+
+  if (mode != 0xFF) {
+    g_feMode = mode;
+    if (mode == 1) g_feLna = true;
+    else if (mode == 2) g_feLna = false;
+    else g_feNextEval = millis() + 1000;        // automatisch: gleich messen
+    if (rs_ != RS_TX && rs_ != RS_SLEEP && !suspended_) feRx();
+  }
+  int16_t st = ST_OK;
+  if (calChanged) {
+    g_cal = nc;
+    g_feNoiseOn10 = g_feNoiseOff10 = 0;        // alte Messung passt nicht mehr zur Kalibrierung
+    log(0, "Frontend-Kalibrierung: PA %.1f, Filter %.1f, LNA %.1f, Bypass %.1f dB", nc.pa10 / 10.0,
+        nc.filt10 / 10.0, nc.lna10 / 10.0, nc.byp10 / 10.0);
+    st = reapplyPower();
+  }
   if (save) {
     Preferences p;
-    if (p.begin("lrmodem", false)) { p.putUChar("fe", mode); p.end(); }
+    if (p.begin("lrmodem", false)) {
+      if (mode != 0xFF) p.putUChar("fe", mode);
+      if (calGiven) {
+        if (calIsDefault(g_cal)) {
+          if (p.isKey("fecal")) p.remove("fecal");
+          g_calStored = false;
+        } else {
+          FeCalPersist cp;
+          cp.magic = FE_CAL_MAGIC;
+          cp.v = g_cal;
+          g_calStored = p.putBytes("fecal", &cp, sizeof(cp)) == sizeof(cp);
+        }
+      }
+      p.end();
+    }
+  }
+  return st;
+}
+
+// Neue Kalibrierung wirksam machen: LR2021 mit dem neu berechneten Pegel einstellen (wie bei SET_LORA/SET_FSK)
+int16_t Modem::reapplyPower() {
+  if (!radioOk_) return ST_OK;                 // wird bei der nächsten Initialisierung übernommen (applyConfig)
+  bool wasSleep = (rs_ == RS_SLEEP);
+  int16_t rc = 0;
+  int16_t st = applyConfig(&rc);
+  if (st != ST_OK) return st;
+  if (wasSleep && !rxWanted_ && !qCount_) {
+    radio.sleep();
+    feSleep();
+    rs_ = RS_SLEEP;
+  } else if (rxWanted_) {
+    startRx(&rc);
+  } else {
+    feRx();
   }
   return ST_OK;
+}
+
+int16_t Modem::suspend() {
+  if (rs_ == RS_TX) return ST_BUSY;             // laufendes Paket erst fertig senden lassen
+  while (qCount_) {                             // wartende Pakete verwerfen und melden
+    cur_ = q_[qHead_];
+    qHead_ = (qHead_ + 1) % TX_QUEUE_LEN;
+    qCount_--;
+    txToaUs_ = 0;
+    st_.tx_rejected++;
+    finishTx(ST_NOT_READY);
+  }
+  if (radioOk_ && rs_ == RS_RX) {
+    radio.standby();
+    rs_ = RS_STANDBY;
+  }
+  g_irq = false;
+  feSleep();
+  suspended_ = true;
+  led(LED_BRIGHTNESS, 0, LED_BRIGHTNESS);       // violett: Firmware-Update
+  return ST_OK;
+}
+
+void Modem::resume() {
+  if (!suspended_) return;
+  suspended_ = false;
+  led(0, 0, 0);
+  if (!radioOk_ || rs_ == RS_SLEEP) return;     // Schlaf: Frontend bleibt aus (wie vor dem Update)
+  feRx();
+  if (rxWanted_) { int16_t d; startRx(&d); }
 }
 
 void Modem::fillStats(Stats& s) {

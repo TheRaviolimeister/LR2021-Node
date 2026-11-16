@@ -38,7 +38,7 @@ COBS( type | seq | payload … | crc_lo | crc_hi )  0x00
 | 0x14 FACTORY | – | – (erase stored settings, restart) |
 | 0x15 SET_AUTORX | u8 0/1 | – |
 | 0x16 FE_GET | – | FeInfo (868 MHz front end of the carrier board; ESP32 A, firmware ≥ 1.1.0) |
-| 0x17 FE_SET | u8 lna_mode (0 automatic, 1 on, 2 off), u8 save | FeInfo; status −11 if there is no front end |
+| 0x17 FE_SET | u8 lna_mode (0 automatic, 1 on, 2 off, 0xFF unchanged), u8 flags (bit0 save, bit1 calibration back to factory values), optionally FeCal (firmware ≥ 1.2.0) | FeInfo; status −11 if there is no front end, −3 if a value is out of range, −4 while a packet is being transmitted |
 | 0x20 TX | u8 flags (bit0 = LBT), u16 tx_id, 1–255 bytes data | – (packet queued, max. 8). Result arrives as EVT_TX_DONE |
 | 0x21 RX_START | – | – receive continuously, also after every transmission |
 | 0x22 STANDBY | – | – |
@@ -49,6 +49,12 @@ COBS( type | seq | payload … | crc_lo | crc_hi )  0x00
 | 0x31 RESET_STATS | – | – |
 | 0x40 RESET_RADIO | – | – (re-initialise the LR2021) |
 | 0x41 REBOOT | – | – |
+| 0x50 OTA_BEGIN | u32 size, u8 sha256[32] (of the application image) | u16 max_chunk (256), u32 slot_size |
+| 0x51 OTA_DATA | u32 offset, 1–256 bytes | u32 next_offset (also returned with status −3) |
+| 0x52 OTA_END | – | – on success, then restart after 0.3 s; with −15/−16: i32 esp_err |
+| 0x53 OTA_ABORT | – | – |
+
+Commands 0x50–0x53 exist from firmware 1.2.0 on, see [Firmware update over the modem link](#firmware-update-over-the-modem-link).
 
 ## Events
 
@@ -85,10 +91,16 @@ InfoBlock(31 B): u8 proto, u8 fw_major, u8 fw_minor, u8 fw_patch, char role ('A'
 Stats    (36 B): u32 rx_ok, rx_crc_err, tx_ok, tx_fail, tx_rejected, airtime_total_ms,
                  airtime_hour_ms, link_bad_frames, cad_busy
 
-FeInfo   (12 B): u8 present, u8 lna_mode (0 automatic, 1 on, 2 off), u8 lna_on, u8 pa (transmitting
+FeInfo   (21 B): u8 present, u8 lna_mode (0 automatic, 1 on, 2 off), u8 lna_on, u8 pa (transmitting
                  via the PA), i16 noise_on×10, i16 noise_off×10 (noise floor at the antenna with and
                  without LNA, dBm; 0 = not measured yet), i8 out_dbm (power at the connector after the
-                 legal limit), i8 legal_dbm, i8 drive_dbm (LR2021 level), i8 out_max_dbm
+                 legal limit), i8 legal_dbm, i8 drive_dbm (LR2021 level), i8 out_max_dbm,
+                 from firmware 1.2.0: i16 pa_gain×10, i16 filter_loss×10, i16 lna_gain×10,
+                 i16 bypass_loss×10 (calibration in use, dB), u8 cal_flags (bit0 differs from the factory
+                 values, bit1 stored in flash). Firmware 1.1.0 sends only the first 12 bytes.
+
+FeCal     (8 B): i16 pa_gain×10, i16 filter_loss×10, i16 lna_gain×10, i16 bypass_loss×10 (dB × 10);
+                 −32768 (0x8000) = leave this value unchanged
 ```
 
 ### 868 MHz front end (carrier board)
@@ -99,12 +111,54 @@ into the LR2021 level (PA from 14 dBm, bypass below) and never exceeds the legal
 frequency (27 dBm in 869.40–869.65 MHz, otherwise 14 dBm). RSSI values (RX event, GET_RSSI) refer
 to the antenna connector, the gain of the LNA and the loss of the filter are taken out.
 
+**Calibration (firmware ≥ 1.2.0).** The conversion uses four values: PA gain (factory value 26 dB),
+plug-in filter loss (3 dB; 0 without a filter module, pins 2–4 bridged), LNA gain (16 dB) and bypass
+loss (2 dB). Measured values are sent with FE_SET (2 bytes + FeCal, resolution 0.1 dB) and stored in
+flash with flags bit0. Allowed ranges: PA 15.0–32.0, filter 0.0–8.0, LNA 5.0–22.0, bypass 0.0–6.0 dB.
+The LR2021 level is rounded down, so the power at the connector never exceeds the target (according
+to the calibration), the LR2021 level never exceeds +8 dBm (input limit of the SE2435L) and the legal
+limit of the frequency is always applied first. With the factory values the result is identical to
+firmware 1.1.0. A changed calibration re-initialises the LR2021 with the new level (like SET_LORA);
+`FACTORY` also removes it. Wrong values change the real output power – only enter measured values.
+
 ## Status values
 0 OK · −1 unknown command · −2 wrong length · −3 invalid parameter · −4 busy ·
 −5 band not enabled for transmitting · −6 power above limit · −7 airtime limit ·
 −8 radio chip error (+ RadioLib code) · −9 wrong modulation · −10 channel busy ·
-−11 radio chip not ready · −12 timeout
+−11 radio chip not ready · −12 timeout · −13 invalid firmware image (not an ESP32-S3 application, too
+large, older than 1.2.0 or without the LR2021-Modem identifier) · −14 firmware for the other modem (A/B) ·
+−15 verification failed (SHA-256 or image check) · −16 flash error (+ i32 esp_err) · −17 no update started
 
 ## Frequency ranges
 - ESP32 A (Core2021-HF): 850–930 MHz and 2400–2500 MHz
 - ESP32 B (Core2021-LF): 410–510 MHz and 2400–2500 MHz
+
+## Firmware update over the modem link
+
+From firmware 1.2.0 both modems can be updated over the same line that carries the protocol (Pi UART
+or USB), so the ESP32 on the carrier board never needs a USB cable for an update. The new application
+is written into the free application slot of the flash; the running firmware stays untouched until the
+new one has been checked completely.
+
+1. **OTA_BEGIN** with the size and the SHA-256 of the *application image* (`lr2021_modem.ino.bin`, or
+   the part of the complete image `LR2021-Modem-A.bin` that starts at 0x10000; `lrmodem.py` extracts it).
+   The modem stops transmitting and receiving (queued packets are dropped with an EVT_TX_DONE status
+   −11, a packet that is just being transmitted is finished first: status −4, try again), puts the
+   868 MHz front end to sleep and shows a violet LED. Status −13 if the size does not fit the slot.
+2. **OTA_DATA** blocks of up to 256 bytes, strictly in order, starting at offset 0. The first block must
+   contain at least the 24-byte image header (0xE9, chip ESP32-S3). Wait for each response before
+   sending the next block. The response carries the next expected offset. A block with the wrong
+   offset is refused with −3 and that offset; repeating the last block (lost response) is
+   acknowledged without writing it twice.
+3. **OTA_END**: the modem reads the slot back and compares its SHA-256 with the one from OTA_BEGIN,
+   checks the identifier `LRMODEM fw x.y.z role A|B` inside the image (other role → −14, version
+   older than 1.2.0 or no identifier → −13), lets ESP-IDF verify the image, sets it as boot partition,
+   answers and restarts 0.3 s later.
+4. After the restart the new firmware sends EVT_BOOT. It confirms itself with the **first valid frame**
+   it receives (for example GET_INFO). If no frame arrives within 120 s, or the new firmware crashes
+   before that, the ESP32 starts the previous firmware again (rollback). Check the version with GET_INFO.
+
+During an update only PING, GET_INFO, GET_CONFIG, FE_GET, GET_STATS, RESET_STATS, REBOOT and the OTA
+commands are accepted (others: −4), and only from the interface that started it. Without data for 30 s
+the update is dropped and the radio continues as before; OTA_ABORT does the same immediately. Do not
+send anything else to the modem during the update: the line is used strictly request/response.

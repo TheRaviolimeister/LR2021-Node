@@ -56,6 +56,12 @@ ESP32 FIRMWARE
   The node talks to the ESP32 over UART3/UART4 at 500000 baud (firmware "LR2021-Modem",
   files LR2021-Modem-A.bin / -B.bin from the release). Check: web interface → ESP32 A/B → firmware.
 
+I2C (QWIIC SOCKETS OF THE CARRIER BOARD)
+  Pin 3 = SDA (PI8), pin 5 = SCL (PI7), 3.3 V, 100 kHz, overlay lr2021-i2c1 → always /dev/i2c-1
+  Scan:  sudo i2cdetect -y 1        (pull-ups 4.7k are on the carrier board)
+  400 kHz: clock-frequency in source\overlay\lr2021-i2c1.dts, rebuild, reboot.
+  Older images: the update package adds the overlay (reboot), i2c-tools: sudo apt install i2c-tools
+
 KNOWN LIMITATIONS
   - The temperature sensor is disabled (overlay lr2021-nothermal): with Armbian kernel
     6.18.60 the Zero 2W reports wrong values (150–260 °C), which would shut the node down

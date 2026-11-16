@@ -6,6 +6,7 @@ lr2021d – der Dienst auf dem Orange Pi der LR2021 Node.
   * stellt sie bereit: TCP 2021 (A, HF 868), 2022 (B, LF 433), GPS-NMEA auf 2023
   * dieselben Kanäle per Bluetooth (serielle Verbindung, RFCOMM-Kanal 1/2/3)
   * Web-Oberfläche auf Port 80: Status, WLAN, Passwort, Update der Node und der ESP32
+    (ESP32 über die Modem-Verbindung, ab Firmware 1.2.0; esptool nur für einen per USB angeschlossenen ESP32)
 
 Nur Python-Standardbibliothek. Alle Netzwege (WLAN-Hotspot, USB-Netz, LAN) erreichen denselben Dienst.
 """
@@ -30,9 +31,9 @@ from urllib.parse import urlparse
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-from lrmodem import build_frame, parse_frame, open_port  # noqa: E402
+from lrmodem import build_frame, parse_frame, open_port, LrModem, load_firmware, OTA_MIN_VERSION  # noqa: E402
 
-VERSION = "1.0.2"
+VERSION = "1.1.0"
 CONF_PATH = "/etc/lr2021/node.json"
 STATE_DIR = "/var/lib/lr2021"
 INSTALL_DIR = "/opt/lr2021"
@@ -288,9 +289,10 @@ class ModemLink(Fanout):
         self.wlock = threading.Lock()
         self.rx_bytes = 0
         self.since = None
+        self.baud = None
 
-    def attach(self, port, path, info):
-        self.port, self.path, self.info = port, path, info
+    def attach(self, port, path, info, baud=None):
+        self.port, self.path, self.info, self.baud = port, path, info, baud
         self.since = time.time()
         threading.Thread(target=self._reader, daemon=True).start()
         log.info("ESP32 %s an %s (Firmware %s)", self.role, path, info.get("fw"))
@@ -408,6 +410,7 @@ class Hub:
         self.gps = GpsLink()
         self.lock = threading.Lock()
         self.flashing = {}
+        self.progress = {}
 
     def link_for(self, target):
         return self.gps if target == "GPS" else self.links[target]
@@ -430,12 +433,12 @@ class Hub:
                         r = probe_modem(path, self.cfg)
                         if r is None:
                             continue
-                        role, port, _, info = r
+                        role, port, baud, info = r
                         link = self.links.get(role)
                         if link is None or link.port is not None or link.paused:
                             port.close()
                             continue
-                        link.attach(port, path, info)
+                        link.attach(port, path, info, baud)
                         busy.add(path)
                 if self.gps.port is None and (gps_tries < 20 or gps_tries % 20 == 0):
                     busy = self.busy_paths()
@@ -452,10 +455,84 @@ class Hub:
                     gps_tries += 1
             time.sleep(5 if any(l.port is None for l in self.links.values()) else 3)
 
-    # ---- ESP32 neu flashen
-    def flash(self, role, image_path, logf):
-        """Modem freigeben, esptool laufen lassen, Modem wieder suchen."""
+    # ---- ESP32 neue Firmware
+    def flash(self, role, data, image_path, logf):
+        """Firmware für ESP32 role einspielen. Antwortet das Modem mit Firmware >= 1.2.0, über die
+        Modem-Verbindung (OTA, die TCP/Bluetooth-Brücke ruht so lange); sonst per esptool an einem
+        USB-Anschluss (ein ESP32 am Pi-UART ist für esptool nicht erreichbar)."""
+        try:
+            fw, why = load_firmware(data), ""
+        except ValueError as e:
+            fw, why = None, str(e)
+        if fw:
+            logf.write("Datei: Firmware %d.%d.%d für ESP32 %s, Programm %d Bytes, SHA-256 %s\n"
+                       % (fw["version"] + (fw["role"], fw["size"], fw["sha256"].hex())))
+            if fw["role"] != role:
+                return False, "Die Datei ist für ESP32 %s, nicht für ESP32 %s" % (fw["role"], role)
+        else:
+            logf.write("Datei nicht als LR2021-Modem-Firmware erkannt: %s\n" % why)
         link = self.links[role]
+        with self.lock:
+            if role in self.flashing:
+                return False, "Für ESP32 %s läuft schon ein Update" % role
+            connected = link.port is not None
+            path = link.path
+            cur = link.info.get("fw") or "0.0.0"
+        usb = bool(path) and ("ACM" in path or "USB" in path)
+        try:
+            cur_v = tuple(int(x) for x in cur.split("."))
+        except ValueError:
+            cur_v = (0, 0, 0)
+        if connected and fw and cur_v >= OTA_MIN_VERSION:
+            return self._ota(link, role, fw, logf)
+        if connected and not usb:
+            if not fw:
+                return False, "Keine LR2021-Modem-Firmware: %s" % why
+            return False, ("ESP32 %s hat Firmware %s – das Update über die Modem-Verbindung gibt es erst ab "
+                           "%d.%d.%d. Einmal per USB flashen (1_Flash_ESP32_%s.bat)."
+                           % ((role, cur) + OTA_MIN_VERSION + (role,)))
+        if fw and not fw["merged"]:
+            return False, "Für das Flashen per USB wird das komplette Abbild (LR2021-Modem-%s.bin) gebraucht" % role
+        return self._esptool(link, role, image_path, logf)
+
+    def _ota(self, link, role, fw, logf):
+        with self.lock:
+            if link.port is None or role in self.flashing:
+                return False, "ESP32 %s ist nicht mehr verbunden" % role
+            path, baud = link.path, link.baud or self.cfg["uart_baud"]
+            link.paused = True
+            self.flashing[role] = path
+            self.progress[role] = 0
+            link.detach()
+        time.sleep(0.3)                         # Lese-Thread der Brücke endet (Lese-Timeout 0,1 s)
+        m = None
+        t0 = time.time()
+        try:
+            logf.write("Update über %s (%d Baud)\n" % (path, baud))
+            logf.flush()
+            m = LrModem(path, baud)
+            m.on_log = lambda lvl, txt: logf.write("ESP32 %s: %s\n" % (role, txt))
+
+            def prog(done, total):
+                self.progress[role] = int(100 * done / total)
+            new = m.ota(fw, prog)
+            msg = "Update erfolgreich (%.0f s): ESP32 %s läuft mit Firmware %s" % (time.time() - t0, role,
+                                                                                new["firmware"])
+            logf.write(msg + "\n")
+            return True, msg
+        except Exception as e:
+            logf.write("Fehler: %s\n" % e)
+            return False, "Update fehlgeschlagen: %s" % e
+        finally:
+            if m:
+                m.close()
+            with self.lock:
+                link.paused = False             # scan_loop findet das Modem wieder (GET_INFO)
+                self.flashing.pop(role, None)
+                self.progress.pop(role, None)
+
+    def _esptool(self, link, role, image_path, logf):
+        """Modem freigeben, esptool laufen lassen (nur USB), Modem wieder suchen."""
         with self.lock:
             path = link.path if link.port is not None else None
             if not path:
@@ -710,7 +787,7 @@ class Web(http.server.BaseHTTPRequestHandler):
                     return self._json({"ok": False, "meldung": "ESP32 A oder B"}, 400)
                 data = self._body(16 * 1024 * 1024)
                 if len(data) < 1024 or data[0] != 0xE9:
-                    return self._json({"ok": False, "meldung": "Keine ESP32-Firmware (.bin, Adresse 0x0)"}, 400)
+                    return self._json({"ok": False, "meldung": "Keine ESP32-Firmware (.bin)"}, 400)
                 return self._json(self.app.flash_esp(role, data))
             if path == "/api/update":
                 data = self._body()
@@ -868,6 +945,7 @@ class App:
                 "tcp": self.cfg["tcp_port_a" if r == "A" else "tcp_port_b"],
                 "bluetooth_kanal": self.cfg["bt_channels"].get(r),
                 "wird_geflasht": r in h.flashing,
+                "update_prozent": h.progress.get(r),
             }
         rc, up = sh("cat", "/proc/uptime", timeout=2)
         temp = None
@@ -1043,7 +1121,7 @@ class App:
             f.write(data)
         logp = os.path.join(STATE_DIR, "esp_%s_flash.log" % role)
         with open(logp, "w") as logf:
-            ok, msg = self.hub.flash(role, img, logf)
+            ok, msg = self.hub.flash(role, data, img, logf)
         tail = open(logp).read()[-3000:]
         self.last_action = "ESP32 %s: %s" % (role, msg)
         log.info(self.last_action)

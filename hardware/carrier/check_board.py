@@ -257,6 +257,9 @@ for core, k, sma in (("U3", "1", "J14"), ("U4", "1", "J15"), ("U4", "9", "J16"))
 
 if net_of("J13", "2") != "GND":
     errors.append("J13 body not GND")
+# ESD shunt inductor at every antenna connector (centre pin -> L -> GND)
+for sma, ind in (("J13", "L10"), ("J14", "L11"), ("J15", "L12"), ("J16", "L13")):
+    shunt((sma, "1"), ind, f"ESD inductor at {sma}")
 # polarity (KiCad diode/LED footprints: pad 1 = cathode; SOT-23 MOSFET: 1 = G, 2 = S, 3 = D)
 v5 = net_of("F1", "2")
 if net_of("D1", "1") != v5 or net_of("D1", "2") != "GND":

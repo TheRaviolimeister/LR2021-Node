@@ -2,12 +2,22 @@
 
 ## 1.7.0
 
-- Carrier board 1.3: 868 MHz front end (Skyworks SE2435L, up to 1 W, LNA with bypass) and a socket for
-  a plug-in 868 MHz filter module (`hardware/filter868`)
-- ESP32 firmware 1.1.0: detects the front end, converts the transmit power to the drive level of the
-  LR2021, enforces the legal limits of the frequency (27 dBm in 869.4–869.65 MHz, otherwise 14 dBm),
-  switches the LNA automatically by the measured noise floor (or fixed on/off), RSSI refers to the
-  antenna connector; new commands FE_GET / FE_SET
+- Carrier board 1.3: 868 MHz front end (Skyworks SE2435L, up to 1 W, LNA with bypass), a socket for a
+  plug-in 868 MHz filter module (`hardware/filter868`), ESD shunt inductors at all four antenna
+  connectors (< 0.05 dB), control lines to the front end as straight lanes
+- ESP32 firmware 1.2.0 (the step from 1.1.0 or older to 1.2.0 must be flashed once over USB):
+  - detects the 868 MHz front end, converts the transmit power to the drive level of the LR2021 and
+    enforces the legal limits of the frequency (27 dBm in 869.4–869.65 MHz, otherwise 14 dBm), whatever
+    is requested; switches the LNA automatically by the measured noise floor (or fixed on/off); RSSI
+    refers to the antenna connector; new commands FE_GET / FE_SET
+  - measured PA gain, filter loss, LNA gain and bypass loss can be stored (`lrmodem.py fe --pa-gain …`)
+  - both modems can be updated over the modem link (node web interface or `lrmodem.py ota`); every
+    update is checked (SHA-256, image check, correct modem A/B, version) before switching, and the
+    modem goes back to the previous firmware if the new one does not come up. The radio pauses during
+    an update (front end asleep, violet LED); stored settings are kept
+- Node 1.1.0: ESP32 updates over the modem link (esptool only for an ESP32 on USB); I2C bus on header
+  pins 3/5 for the carrier board's Qwiic/I2C sockets – always `/dev/i2c-1`, 100 kHz (overlay
+  `lr2021-i2c1`, installed by the node update, reboot required); the node image includes i2c-tools
 - App: recognises the front end and then allows the full 27 dBm in 869.4–869.65 MHz; Radio → Modem
   shows the front end (PA/bypass, power, noise floor) and switches the LNA (automatic / on / off)
 

@@ -6,7 +6,7 @@
 #include <stdint.h>
 
 #define FW_VERSION_MAJOR 1
-#define FW_VERSION_MINOR 1
+#define FW_VERSION_MINOR 2
 #define FW_VERSION_PATCH 0
 
 #if !defined(MODEM_ROLE_A) && !defined(MODEM_ROLE_B)
@@ -79,6 +79,24 @@
 #define FE_LEGAL_CAP        1           // EU-SRD-Grenzen immer einhalten (ERP, Antenne bis 2,15 dBi)
 #define FE_FREQ_TOL_HZ      40000UL     // Toleranz an den Bandgrenzen für die Quarzkorrektur der App
 #define FE_AUTO_PERIOD_MS   300000UL    // LNA-Automatik: alle 5 Minuten Rauschboden mit/ohne LNA messen
+// Kalibrierung: Die vier Kennwerte oben sind nur die Startwerte. Gemessene Werte (0,1 dB genau) werden per
+// FE_SET übertragen und im Flash gespeichert. Erlaubte Bereiche in 0,1 dB (Plausibilität, Tippfehler abfangen).
+// Der LR2021-Pegel bleibt in jedem Fall <= FE_DRIVE_MAX_DBM, die gesetzliche Grenze wird immer angewendet.
+#define FE_CAL_PA_MIN10     150
+#define FE_CAL_PA_MAX10     320
+#define FE_CAL_LNA_MIN10    50
+#define FE_CAL_LNA_MAX10    220
+#define FE_CAL_BYP_MIN10    0
+#define FE_CAL_BYP_MAX10    60
+#define FE_CAL_FILT_MIN10   0
+#define FE_CAL_FILT_MAX10   80
+
+// Firmware-Update über die Modem-Verbindung (OTA in den freien App-Slot der Partitionstabelle)
+#define OTA_CHUNK_MAX       256         // Nutzdaten je OTA_DATA
+#define OTA_IDLE_TIMEOUT_MS 30000UL     // keine OTA-Daten so lange -> Update abbrechen, Funk wieder an
+#define OTA_MIN_MAJOR       1           // ältere Firmware (ohne OTA/Frontend-Steuerung) wird nicht angenommen
+#define OTA_MIN_MINOR       2
+#define OTA_CONFIRM_MS      120000UL    // neue Firmware: bis dahin muss ein gültiger Rahmen kommen, sonst zurück
 
 // 2,4-GHz-Bereich (beide Module)
 #define HF24_MIN_HZ         2400000000UL

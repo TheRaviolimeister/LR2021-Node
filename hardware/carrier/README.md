@@ -42,13 +42,20 @@ USB data lines have a fixed fan-out (0.5 mm pin pitch).
   - **RF lines:** each module pin is connected to its connector by a 50 Ω line (grounded
     coplanar waveguide: 1.55 mm track, 0.3 mm gap, solid ground underneath, ground via fence on
     both sides; calculated for the standard 1.6 mm FR4 two-layer stack). No other signal crosses
-    or runs underneath an RF line. The 433 MHz line is 15 mm long; on the 868 MHz side the module
-    feeds the filter socket and the front end, whose output sits 10 mm below its connector. A
-    matched line of this length does not radiate and loses well below 0.2 dB.
-  - **Filter places:** the RF lines have a π network close to the connector: the series 0 Ω
-    resistor is fitted, the shunt places (0603) stay empty. A low-pass or matching network can be
-    added later (see "RF filters" below). On the 868 MHz line the module-side shunt is the fitted
-    2.7 pF capacitor of the front end's antenna low-pass.
+    or runs underneath an RF line. Lengths: 433 MHz and 2.4 GHz (LF module) about 17 mm,
+    2.4 GHz (HF module) 36 mm, 868 MHz 19 mm module → filter socket, 9 mm filter socket → front end,
+    10 mm front end → connector. A matched line of this length does not radiate; the loss is below
+    0.05 dB (433 MHz), about 0.15 dB (868 MHz, all pieces) and about 0.3 dB (2.4 GHz, HF module).
+  - **π network at every connector:** series 0 Ω resistor (fitted), a free 0603 shunt place on the
+    module side (for a later low-pass or matching network, see "RF filters" below; on the 868 MHz
+    line this place is the fitted 2.7 pF capacitor of the front end's antenna low-pass) and a shunt
+    inductor to ground right at the connector.
+  - **ESD protection:** the shunt inductor (L10 868 MHz: 68 nH, L11/L12 2.4 GHz: 15 nH, L13 433 MHz:
+    100 nH, Murata LQG18HN) drains static charge from the antenna and its cable to ground. Its
+    self-resonance lies just above the band (≥ 1.0 GHz, ≥ 2.8 GHz, ≥ 0.8 GHz), so in the band it is
+    several hundred ohms: worst case 0.02–0.05 dB, in practice not measurable. The antenna ports of
+    the radio modules and of the front end carry no DC (antennas may be DC shorts), so the DC path is
+    harmless. This matters most for the front end (SE2435L: 1 kV HBM).
 - **868 MHz front end (U8, Skyworks SE2435L):** see the section below – up to +30 dBm (1 W) at the
   connector, a low-noise amplifier with bypass that the firmware switches by the measured noise
   floor, and the plug-in filter socket J22.
@@ -143,9 +150,9 @@ USB data lines have a fixed fan-out (0.5 mm pin pitch).
 - **2.4 GHz:** no filter. An LTCC band-pass filter (e.g. Murata LFB182G45SG9B740, 0.7 dB, 500 mW)
   would fit, but it passes 2400–2500 MHz only and would cut off the 13 cm amateur band below
   2400 MHz.
-- The π networks allow a low-pass filter for transmitter harmonics if a measurement ever shows the
-  need (3rd order Butterworth, 50 Ω: 433 MHz: 5.6 pF – 27 nH – 5.6 pF; C0G capacitors, high-Q
-  wire-wound inductors).
+- The free module-side shunt places of the π networks allow a low-pass filter for transmitter
+  harmonics if a measurement ever shows the need (e.g. 433 MHz: 5.6 pF shunt + the 0 Ω replaced by
+  27 nH; C0G capacitors, high-Q wire-wound inductors).
 
 ## Checks of the design
 

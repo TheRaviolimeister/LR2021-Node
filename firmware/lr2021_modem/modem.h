@@ -39,7 +39,16 @@ public:
   void fillStats(Stats& s);
   void resetStats();
   void fillFe(FeInfo& f);
-  int16_t setFeMode(uint8_t mode, bool save);
+  // mode 0..2 oder 0xFF (unverändert); flags bit0 speichern, bit1 Kalibrierung auf Werkswerte; cal darf nullptr sein
+  int16_t setFe(uint8_t mode, uint8_t flags, const FeCal* cal);
+
+  // Firmware-Update: Funk anhalten (kein Senden/Empfangen, Frontend im Schlaf) bzw. wieder starten
+  int16_t suspend();
+  void resume();
+  bool suspended() const { return suspended_; }
+
+  // Meldung an den Pi (EVT_LOG), level 0 Info, 1 Warnung, 2 Fehler
+  void log(uint8_t level, const char* fmt, ...) __attribute__((format(printf, 3, 4)));
 
   // gespeicherte Einstellungen
   void save();
@@ -72,7 +81,7 @@ private:
   void measureHealth();
   int8_t txDrive(uint32_t f, uint32_t bw, int8_t outDbm);   // Frontend: LR2021-Pegel für eine Ausgangsleistung
   void feEvaluate();                                       // LNA-Automatik
-  void log(uint8_t level, const char* fmt, ...);
+  int16_t reapplyPower();                                  // nach Änderung der Kalibrierung
   void led(uint8_t r, uint8_t g, uint8_t b);
 
   EventSink sink_ = nullptr;
@@ -86,6 +95,7 @@ private:
   int16_t initCode_ = 0;
   uint8_t rs_ = RS_OFF;
   bool rxWanted_ = false;       // nach TX wieder in den Empfang
+  bool suspended_ = false;      // Firmware-Update läuft: Funk angehalten
 
   TxItem q_[TX_QUEUE_LEN];
   uint8_t qHead_ = 0, qCount_ = 0;

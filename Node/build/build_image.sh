@@ -86,7 +86,7 @@ say "Pakete installieren (dauert unter qemu einige Minuten)"
 in_chroot "apt-get update"
 in_chroot "apt-get install -y --no-install-recommends -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold \
   network-manager dnsmasq-base avahi-daemon libnss-mdns nftables bluez bluez-tools rfkill iw \
-  python3 python3-serial esptool gpsd-clients pps-tools openssh-server ca-certificates usbutils sudo"
+  python3 python3-serial esptool gpsd-clients pps-tools openssh-server ca-certificates usbutils sudo i2c-tools"
 in_chroot "apt-get clean"
 in_chroot "command -v sdptool bluetoothctl nmcli esptool nft python3" || true
 
@@ -190,7 +190,9 @@ fi
 #                    -> sofortige Notabschaltung nach dem Kernelstart; Sensor abschalten
 #  lr2021-uart34:    UART3 (PI9/PI10, ttyS3, ESP32 A) und UART4 (PI13/PI14, ttyS4, ESP32 B);
 #                    der Kernel-DT hat dafür function="uart2", Armbians uart4-pi-Overlay schaltet uart3 ein
-LR_OVERLAYS="lr2021-nothermal lr2021-uart34"
+#  lr2021-i2c1:      I2C1 (SDA PI8 = Pin 3, SCL PI7 = Pin 5) für die I2C/Qwiic-Buchsen der Trägerplatine,
+#                    100 kHz, Alias i2c1 -> immer /dev/i2c-1 (ohne Alias hängt die Nummer von der Probe-Reihenfolge ab)
+LR_OVERLAYS="lr2021-nothermal lr2021-uart34 lr2021-i2c1"
 mkdir -p "$MNT/boot/overlay-user"
 for o in $LR_OVERLAYS; do
   say "Overlay $o"
@@ -292,16 +294,32 @@ chk "DT: UART4 (ttyS4) an" "dtnode serial@5001000 | grep -q 'status = \"okay\"'"
 chk "DT: UART5 (ttyS5) an" "dtnode serial@5001400 | grep -q 'status = \"okay\"'"
 chk "DT: PI9/PI10 = uart3" "grep -A3 'lr2021-uart3-pins {' $B/merged.dts | grep -q 'function = \"uart3\"'"
 chk "DT: PI13/PI14 = uart4" "grep -A3 'lr2021-uart4-pins {' $B/merged.dts | grep -q 'function = \"uart4\"'"
+# I2C1 (Pin 3/5): Knoten an, 100 kHz, eigene Pin-Gruppe PI7/PI8 mit function i2c1 (Mux 5 im Kernel-Treiber),
+# Alias i2c1 (-> /dev/i2c-1), und kein anderer aktiver Knoten nutzt PI7/PI8 (pinctrl, GPIO, IRQ)
+chk "DT: I2C1 (i2c@5002400) an" "[ \"\$(fdtget $B/merged.dtb /soc/i2c@5002400 status)\" = okay ]"
+chk "DT: I2C1 100 kHz (oder 400 kHz)" "case \"\$(fdtget $B/merged.dtb /soc/i2c@5002400 clock-frequency)\" in 100000|400000) true;; *) false;; esac"
+chk "DT: PI7/PI8 = i2c1" "[ \"\$(fdtget $B/merged.dtb /soc/pinctrl@300b000/lr2021-i2c1-pins pins)\" = 'PI7 PI8' ] && [ \"\$(fdtget $B/merged.dtb /soc/pinctrl@300b000/lr2021-i2c1-pins function)\" = i2c1 ]"
+chk "DT: I2C1 pinctrl -> lr2021-i2c1-pins" "[ \"\$(fdtget -t x $B/merged.dtb /soc/i2c@5002400 pinctrl-0)\" = \"\$(fdtget -t x $B/merged.dtb /soc/pinctrl@300b000/lr2021-i2c1-pins phandle)\" ]"
+chk "DT: Alias i2c1 (/dev/i2c-1)" "[ \"\$(fdtget $B/merged.dtb /aliases i2c1)\" = /soc/i2c@5002400 ]"
+python3 "$NODE/build/dt_pin_users.py" "$B/merged.dts" PI7 PI8 PI9 PI10 PI13 PI14 PH2 PH3 > "$B/pin_users.txt"
+sed 's/^/    Pin-Nutzer: /' "$B/pin_users.txt"
+PI78_USERS=$(awk '{n=split($NF,p,","); for(i=1;i<=n;i++) if(p[i]=="PI7"||p[i]=="PI8") print $1}' "$B/pin_users.txt" | sort -u | tr '\n' ' ')
+PIN_DUPS=$(awk '{n=split($NF,p,","); for(i=1;i<=n;i++) print p[i]}' "$B/pin_users.txt" | sort | uniq -d | tr '\n' ' ')
+PIN_LINES=$(wc -l < "$B/pin_users.txt")
+chk "DT: PI7/PI8 nur von I2C1 belegt" "[ '$PI78_USERS' = '/soc/i2c@5002400 ' ]"
+chk "DT: keine Pin-Doppelbelegung (I2C1, UART3/4/5)" "[ -z '$PIN_DUPS' ] && [ $PIN_LINES = 4 ]"
 chk "Benutzer lr2021 (sudo,dialout)" "chroot $MNT id -nG lr2021 | grep -qw sudo && chroot $MNT id -nG lr2021 | grep -qw dialout"
 chk "sdptool vorhanden" "[ -x $MNT/usr/bin/sdptool ]"
 chk "esptool vorhanden" "chroot $MNT sh -c 'command -v esptool || command -v esptool.py'"
 chk "nmcli vorhanden" "[ -x $MNT/usr/bin/nmcli ]"
+chk "i2c-tools vorhanden (i2cdetect)" "[ -x $MNT/usr/sbin/i2cdetect ]"
 chk "libcomposite in modules-load" "grep -q libcomposite $MNT/etc/modules-load.d/lr2021.conf"
 KV=$(ls "$MNT/lib/modules" | head -n1)
 chk "Kernel hat libcomposite ($KV)" "find $MNT/lib/modules/$KV -name 'libcomposite.ko*' | grep -q . || grep -q 'CONFIG_USB_LIBCOMPOSITE=y' $MNT/boot/config-$KV"
 chk "Kernel hat usb_f_ncm" "find $MNT/lib/modules/$KV -name 'usb_f_ncm.ko*' | grep -q . || grep -q 'CONFIG_USB_F_NCM=y' $MNT/boot/config-$KV"
 chk "Kernel hat usb_f_acm" "find $MNT/lib/modules/$KV -name 'usb_f_acm.ko*' | grep -q . || grep -q 'CONFIG_USB_F_ACM=y' $MNT/boot/config-$KV"
 chk "Kernel hat musb (OTG)" "grep -qE 'CONFIG_USB_MUSB_SUNXI=(y|m)' $MNT/boot/config-$KV"
+chk "Kernel hat I2C-Treiber (mv64xxx) + /dev/i2c-N" "grep -q 'CONFIG_I2C_MV64XXX=y' $MNT/boot/config-$KV && grep -q 'CONFIG_I2C_CHARDEV=y' $MNT/boot/config-$KV"
 grep -E 'CONFIG_USB_MUSB_(HOST|GADGET|DUAL_ROLE)=y' "$MNT/boot/config-$KV" || true
 rm -f "$MNT/usr/bin/qemu-aarch64-static"
 

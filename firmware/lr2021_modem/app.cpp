@@ -4,6 +4,8 @@
 #include "protocol.h"
 #include "link.h"
 #include "modem.h"
+#include "ota.h"
+#include <esp_ota_ops.h>
 
 #if defined(ARDUINO_USB_CDC_ON_BOOT) && ARDUINO_USB_CDC_ON_BOOT
 #error "Bitte \"USB CDC On Boot: Disabled\" einstellen (Serial muss UART0 sein)"
@@ -24,6 +26,13 @@ static const char LRMODEM_ID[] =
 #endif
 static bool rebootPending = false;
 static uint32_t rebootAt = 0;
+static HostLink* otaLink = nullptr;  // Verbindung, über die das laufende Update kommt
+static bool pendingVerify = false;   // erster Start nach einem Update: noch nicht bestätigt
+
+// Rollback: Der Arduino-Kern soll eine neue Firmware nicht sofort beim Start als gültig markieren.
+// Das geschieht hier erst, wenn ein gültiger Rahmen vom Pi/PC angekommen ist (Verbindung funktioniert).
+// Kommt innerhalb von OTA_CONFIRM_MS keiner, startet der ESP32 wieder mit der vorherigen Firmware.
+extern "C" bool verifyRollbackLater() { return true; }
 
 // Ereignisse an alle Verbindungen
 static void eventSink(uint8_t type, const uint8_t* data, uint16_t len) {
@@ -48,8 +57,34 @@ static void replyRadio(HostLink& l, uint8_t cmd, uint8_t seq, int16_t st, int16_
   else reply(l, cmd, seq, st);
 }
 
+// nach einem fehlgeschlagenen/abgebrochenen Update den Funk wieder starten
+static void otaCleanup() {
+  if (!ota.active() && modem.suspended()) {
+    modem.resume();
+    otaLink = nullptr;
+  }
+}
+
+// während eines Updates erlaubt: Abfragen, die den Funk nicht anfassen
+static bool allowedDuringOta(uint8_t type) {
+  switch (type) {
+    case CMD_PING: case CMD_GET_INFO: case CMD_GET_CONFIG: case CMD_FE_GET: case CMD_GET_STATS:
+    case CMD_RESET_STATS: case CMD_REBOOT:
+    case CMD_OTA_BEGIN: case CMD_OTA_DATA: case CMD_OTA_END: case CMD_OTA_ABORT:
+      return true;
+    default:
+      return false;
+  }
+}
+
 static void handleFrame(HostLink& l, uint8_t type, uint8_t seq, const uint8_t* d, uint16_t len) {
   int16_t rc = 0;
+  if (pendingVerify) {
+    pendingVerify = false;
+    esp_err_t e = esp_ota_mark_app_valid_cancel_rollback();
+    modem.log(e == ESP_OK ? 0 : 1, "Neue Firmware bestaetigt (%s)", e == ESP_OK ? "ok" : esp_err_to_name(e));
+  }
+  if (type < 0x80 && ota.active() && !allowedDuringOta(type)) { reply(l, type, seq, ST_BUSY); return; }
   switch (type) {
     case CMD_PING: {
       uint8_t b[5];
@@ -116,8 +151,11 @@ static void handleFrame(HostLink& l, uint8_t type, uint8_t seq, const uint8_t* d
       break;
     }
     case CMD_FE_SET: {
-      if (len != 2) { reply(l, type, seq, ST_BAD_LENGTH); break; }
-      int16_t st = modem.setFeMode(d[0], d[1] != 0);
+      // 2 Bytes (mode, flags) wie in 1.1.0, optional dahinter FeCal (Kalibrierung)
+      if (len != 2 && len != 2 + sizeof(FeCal)) { reply(l, type, seq, ST_BAD_LENGTH); break; }
+      FeCal cal;
+      if (len > 2) memcpy(&cal, d + 2, sizeof(cal));
+      int16_t st = modem.setFe(d[0], d[1], len > 2 ? &cal : nullptr);
       FeInfo f;
       modem.fillFe(f);
       reply(l, type, seq, st, &f, sizeof(f));
@@ -167,9 +205,64 @@ static void handleFrame(HostLink& l, uint8_t type, uint8_t seq, const uint8_t* d
       { int16_t st = modem.resetRadio(&rc); replyRadio(l, type, seq, st, rc); }
       break;
     case CMD_REBOOT:
+      ota.abort();
       reply(l, type, seq, ST_OK);
       rebootPending = true;
       rebootAt = millis() + 200;
+      break;
+    case CMD_OTA_BEGIN: {
+      if (ota.active() && otaLink != &l) { reply(l, type, seq, ST_BUSY); break; }
+      if (len != 36) { reply(l, type, seq, ST_BAD_LENGTH); break; }
+      if (!ota.active()) {
+        int16_t st = modem.suspend();             // Funk anhalten, Frontend schlafen legen
+        if (st != ST_OK) { reply(l, type, seq, st); break; }
+      }
+      uint32_t slot = 0;
+      int16_t st = ota.begin(d, len, &slot);
+      uint8_t b[6];
+      uint16_t mc = OTA_CHUNK_MAX;
+      memcpy(b, &mc, 2);
+      memcpy(b + 2, &slot, 4);
+      if (st == ST_OK) {
+        otaLink = &l;
+        modem.log(0, "Firmware-Update: %lu Bytes in den App-Slot (%lu Bytes)", (unsigned long)ota.size(), (unsigned long)slot);
+      }
+      reply(l, type, seq, st, b, 6);
+      otaCleanup();
+      break;
+    }
+    case CMD_OTA_DATA: {
+      if (ota.active() && otaLink != &l) { reply(l, type, seq, ST_BUSY); break; }
+      uint32_t next = 0;
+      int16_t st = ota.data(d, len, &next);
+      reply(l, type, seq, st, &next, 4);
+      if (st != ST_OK && !ota.active()) modem.log(2, "Firmware-Update abgebrochen (Status %d)", st);
+      otaCleanup();
+      break;
+    }
+    case CMD_OTA_END: {
+      if (ota.active() && otaLink != &l) { reply(l, type, seq, ST_BUSY); break; }
+      int32_t err = 0;
+      int16_t st = ota.end(&err);
+      if (st == ST_OK) {
+        modem.log(0, "Firmware-Update geprueft, Neustart");
+        reply(l, type, seq, st);
+        rebootPending = true;
+        rebootAt = millis() + 300;
+      } else {
+        if (st != ST_NO_SESSION) modem.log(2, "Firmware-Update fehlgeschlagen (Status %d, Fehler 0x%lX)", st, (unsigned long)err);
+        if (st == ST_FLASH_ERROR || st == ST_VERIFY_FAILED) reply(l, type, seq, st, &err, 4);
+        else reply(l, type, seq, st);
+      }
+      otaCleanup();
+      break;
+    }
+    case CMD_OTA_ABORT:
+      if (ota.active() && otaLink != &l) { reply(l, type, seq, ST_BUSY); break; }
+      if (ota.active()) modem.log(1, "Firmware-Update abgebrochen");
+      ota.abort();
+      reply(l, type, seq, ST_OK);
+      otaCleanup();
       break;
     default:
       // Antworten/Ereignisse, die zurückkommen, ignorieren; unbekannte Befehle melden
@@ -179,6 +272,11 @@ static void handleFrame(HostLink& l, uint8_t type, uint8_t seq, const uint8_t* d
 }
 
 void setup() {
+  {
+    const esp_partition_t* run = esp_ota_get_running_partition();
+    esp_ota_img_states_t s;
+    pendingVerify = run && esp_ota_get_state_partition(run, &s) == ESP_OK && s == ESP_OTA_IMG_PENDING_VERIFY;
+  }
   usbLink.begin(USB_BAUD, -1, -1);
   hostLink.begin(HOST_BAUD, PIN_HOST_RX, PIN_HOST_TX);
   randomSeed(esp_random());
@@ -210,6 +308,10 @@ void setup() {
   if (n > sizeof(msg) - 1) n = sizeof(msg) - 1;
   memcpy(msg + 1, LRMODEM_ID, n);
   eventSink(EVT_LOG, msg, (uint16_t)(n + 1));
+  {
+    const esp_partition_t* run = esp_ota_get_running_partition();
+    modem.log(0, "App-Slot %s%s", run ? run->label : "?", pendingVerify ? " (neu, wartet auf Bestaetigung)" : "");
+  }
   enableLoopWDT();                   // ab hier: hängt die Schleife > 5 s, startet der ESP32 neu
 }
 
@@ -217,6 +319,19 @@ void loop() {
   hostLink.poll(handleFrame);
   usbLink.poll(handleFrame);
   modem.loop();
+  if (ota.idle()) {                  // Gegenstelle meldet sich nicht mehr: Update verwerfen, Funk wieder an
+    ota.abort();
+    modem.log(1, "Firmware-Update abgebrochen (keine Daten)");
+    otaCleanup();
+  }
+  if (pendingVerify && millis() > OTA_CONFIRM_MS) {
+    // neue Firmware hat keine Verbindung zustande gebracht -> zurück zur vorherigen
+    pendingVerify = false;
+    modem.log(2, "Neue Firmware nicht bestaetigt, zurueck zur vorherigen");
+    Serial.flush();
+    Serial1.flush();
+    esp_ota_mark_app_invalid_rollback_and_reboot();   // kehrt nur bei Fehler zurück
+  }
   if (rebootPending && (int32_t)(millis() - rebootAt) >= 0) {
     Serial.flush();
     Serial1.flush();

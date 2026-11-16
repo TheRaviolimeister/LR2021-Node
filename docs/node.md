@@ -59,10 +59,34 @@ Node\Write_SD.bat        write it to the SD card labelled “LR2021”
 Sources of the image: `Node/source/` (services, configuration, device tree overlays, web interface),
 build script `Node/build/build_image.sh`.
 
+## I2C (Qwiic sockets of the carrier board)
+
+The I2C/Qwiic sockets and the two 1×4 I2C headers of the carrier board share one bus on the Pi header:
+
+| Pi pin | SoC pin | Signal |
+|---|---|---|
+| 3 | PI8 | SDA |
+| 5 | PI7 | SCL |
+
+The sockets get 3.3 V from Pi pins 1 and 17.
+
+- The overlay `lr2021-i2c1` switches on I2C1 at 100 kHz. The bus is always **`/dev/i2c-1`**
+  (the overlay sets the device tree alias `i2c1`; other I2C buses such as the PMIC bus get numbers from 2 up).
+- Scan the bus: `sudo i2cdetect -y 1` (package `i2c-tools`, included in the image).
+- Pull-ups: 4.7 kΩ to 3.3 V on the carrier board, the internal pull-ups are off. Without the
+  carrier board (no pull-ups) the bus does not work.
+- 3.3 V logic only – do not connect 5 V I2C modules without a level shifter.
+- 400 kHz: change `clock-frequency = <100000>` to `<400000>` in `Node/source/overlay/lr2021-i2c1.dts`,
+  rebuild (image or update package) and reboot. Only if every device on the bus supports it.
+- Nodes with an older image get the overlay with the update package (active after a reboot);
+  install `i2c-tools` there once with `sudo apt install i2c-tools` (needs internet).
+
 ## Notes
 
-- Own device tree overlays: `lr2021-uart34` (UART3/UART4 for the ESP32) and `lr2021-nothermal`
+- Own device tree overlays (`/boot/overlay-user`, listed in `user_overlays` of `/boot/armbianEnv.txt`):
+  `lr2021-uart34` (UART3/UART4 for the ESP32), `lr2021-i2c1` (I2C on pins 3/5) and `lr2021-nothermal`
   (with this kernel the Zero 2W temperature sensor gives no valid readings and is disabled – provide
-  cooling under continuous load).
+  cooling under continuous load). If one overlay fails to apply, U-Boot boots without all of them
+  (the boot log on the serial console shows “Applying user provided DT overlay …”).
 - Wi-Fi hotspot WPA2-PSK only, without PMF (a limitation of the Wi-Fi driver).
 - Log: `journalctl -u lr2021d -f`, configuration: `/etc/lr2021/node.json`.

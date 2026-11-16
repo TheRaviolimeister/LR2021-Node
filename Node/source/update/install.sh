@@ -47,8 +47,9 @@ echo "  root-Autologin entfernt"
 # 5) Eigene Device-Tree-Overlays (wirken nach Neustart):
 #    lr2021-nothermal = falsche Temperaturwerte -> Sensor aus
 #    lr2021-uart34    = UART3/UART4 für ESP32 A/B (Kernel-DT hat falsches Pinmux)
+#    lr2021-i2c1      = I2C1 auf Pin 3/5 (SDA PI8, SCL PI7) für die I2C/Qwiic-Buchsen -> /dev/i2c-1
 ENV=$R/boot/armbianEnv.txt
-for o in lr2021-nothermal lr2021-uart34; do
+for o in lr2021-nothermal lr2021-uart34 lr2021-i2c1; do
   [ -f "$D/$o.dtbo" ] && [ -f "$ENV" ] || continue
   install -d "$R/boot/overlay-user"
   install -m 644 "$D/$o.dtbo" "$R/boot/overlay-user/"
@@ -59,6 +60,8 @@ for o in lr2021-nothermal lr2021-uart34; do
   fi
   echo "  Overlay $o eingetragen (wirkt nach Neustart)"
 done
+# i2c-tools (i2cdetect) gibt es erst ab dem Image mit I2C; ältere Nodes: einmal mit Internet nachinstallieren
+[ -n "$R" ] || command -v i2cdetect >/dev/null 2>&1 || echo "  Hinweis: i2c-tools fehlt – für i2cdetect: sudo apt install i2c-tools (braucht Internet)"
 
 # 6) Baudrate zu den ESP32: 500000 (der H618-UART kann 460800 nicht exakt erzeugen); ältere Konfigurationen umstellen
 NJ=$R/etc/lr2021/node.json

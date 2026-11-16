@@ -7,6 +7,7 @@ Als Programm:
     python3 lrmodem.py -p /dev/ttyS3 lora --preset meshtastic-eu
     python3 lrmodem.py -p /dev/ttyS3 rx
     python3 lrmodem.py -p /dev/ttyS3 tx "Hallo Welt"
+    python3 lrmodem.py -p /dev/ttyS4 ota LR2021-Modem-A.bin   (Firmware-Update über die Leitung, ab 1.2.0)
     python3 lrmodem.py -h                      (alle Befehle)
 
 Als Bibliothek:
@@ -19,8 +20,10 @@ Als Bibliothek:
 Braucht nur Python 3 (unter Linux keine Zusatzpakete). Unter Windows wird pyserial verwendet.
 """
 import argparse
+import hashlib
 import os
 import queue
+import re
 import struct
 import sys
 import threading
@@ -34,14 +37,23 @@ PROTO_MAGIC = 0x444D524C
 
 CMD = dict(PING=0x01, GET_INFO=0x02, GET_CONFIG=0x03, SET_LORA=0x10, SET_FSK=0x11, SET_LIMITS=0x12,
            SAVE=0x13, FACTORY=0x14, SET_AUTORX=0x15, FE_GET=0x16, FE_SET=0x17, TX=0x20, RX_START=0x21, STANDBY=0x22, SLEEP=0x23,
-           CAD=0x24, GET_RSSI=0x25, GET_STATS=0x30, RESET_STATS=0x31, RESET_RADIO=0x40, REBOOT=0x41)
+           CAD=0x24, GET_RSSI=0x25, GET_STATS=0x30, RESET_STATS=0x31, RESET_RADIO=0x40, REBOOT=0x41,
+           OTA_BEGIN=0x50, OTA_DATA=0x51, OTA_END=0x52, OTA_ABORT=0x53)
 EVT_BOOT, EVT_RX, EVT_TX_DONE, EVT_LOG, EVT_ERROR = 0xE0, 0xE1, 0xE2, 0xE4, 0xE5
 
 STATUS = {0: "OK", -1: "unbekannter Befehl", -2: "falsche Länge", -3: "ungültiger Parameter",
           -4: "beschäftigt / Warteschlange voll", -5: "Senden in diesem Band nicht freigegeben",
           -6: "Sendeleistung über Grenzwert", -7: "Sendezeit-Limit (Duty Cycle) erreicht",
           -8: "Fehler vom Funkchip", -9: "falsche Modulationsart", -10: "Kanal belegt (LBT)",
-          -11: "Funkchip nicht bereit", -12: "Zeitüberschreitung"}
+          -11: "Funkchip nicht bereit", -12: "Zeitüberschreitung",
+          -13: "Firmware-Datei ungültig (kein ESP32-S3-Programm, zu groß, zu alt oder ohne Kennung)",
+          -14: "Firmware für das andere Modem (A/B)", -15: "Prüfung der Firmware fehlgeschlagen (SHA-256)",
+          -16: "Fehler beim Schreiben in den Flash", -17: "kein Update begonnen"}
+
+# Firmware-Update über die Leitung (OTA): ab dieser Firmware-Version vorhanden
+OTA_MIN_VERSION = (1, 2, 0)
+OTA_CHUNK = 256
+FE_CAL_KEEP = -32768
 RADIO_STATE = {0: "aus", 1: "standby", 2: "empfang", 3: "senden", 4: "schlaf"}
 MODEM_NAME = {1: "LoRa", 2: "FSK"}
 BAND_NAME = {1: "HF (868)", 2: "LF (433)"}
@@ -130,13 +142,113 @@ def parse_frame(encoded: bytes):
 
 
 class ModemError(Exception):
-    def __init__(self, status, radiolib=None):
+    def __init__(self, status, radiolib=None, data=b""):
         self.status = status
         self.radiolib = radiolib
+        self.data = bytes(data)         # Antwortdaten nach dem Status (z. B. next_offset bei OTA_DATA)
         msg = STATUS.get(status, "Status %d" % status)
         if radiolib is not None:
             msg += " (RadioLib %d)" % radiolib
+        if status in (-15, -16) and len(self.data) >= 4:
+            msg += " (esp_err 0x%X)" % struct.unpack("<i", self.data[:4])[0]
         super().__init__(msg)
+
+
+# --------------------------------------------------------------------------
+# Firmware-Dateien (für das Update über die Leitung)
+# --------------------------------------------------------------------------
+ESP_IMAGE_MAGIC = 0xE9
+ESP_CHIP_ESP32S3 = 0x0009
+APP_ID_RE = re.compile(rb"LRMODEM fw (\d+)\.(\d+)\.(\d+) role ([AB]) \(")
+
+
+def esp_image_length(data, off=0):
+    """Länge eines ESP-Programms (Kopf, Segmente, Prüfsumme, ggf. SHA-256) ab off.
+    Prüft die XOR-Prüfsumme und den angehängten SHA-256. ValueError bei Fehlern."""
+    if len(data) < off + 24 or data[off] != ESP_IMAGE_MAGIC:
+        raise ValueError("kein ESP-Programm an 0x%X" % off)
+    nseg, hash_appended = data[off + 1], data[off + 23]
+    if not 1 <= nseg <= 16:
+        raise ValueError("ESP-Programm: %d Segmente" % nseg)
+    pos, chk = off + 24, 0xEF
+    for _ in range(nseg):
+        if pos + 8 > len(data):
+            raise ValueError("ESP-Programm abgeschnitten")
+        _addr, ln = struct.unpack_from("<II", data, pos)
+        pos += 8
+        if pos + ln > len(data):
+            raise ValueError("ESP-Programm abgeschnitten")
+        for b in data[pos:pos + ln]:
+            chk ^= b
+        pos += ln
+    length = ((pos - off) + 1 + 15) & ~15          # Prüfsummen-Byte am Ende eines 16-Byte-Blocks
+    if off + length > len(data):
+        raise ValueError("ESP-Programm abgeschnitten")
+    if data[off + length - 1] != chk:
+        raise ValueError("ESP-Programm: Prüfsumme falsch")
+    if hash_appended == 1:
+        if off + length + 32 > len(data):
+            raise ValueError("ESP-Programm abgeschnitten (SHA-256)")
+        if hashlib.sha256(data[off:off + length]).digest() != bytes(data[off + length:off + length + 32]):
+            raise ValueError("ESP-Programm: SHA-256 falsch")
+        length += 32
+    return length
+
+
+def load_firmware(data):
+    """Firmware-Datei untersuchen. Nimmt das komplette Abbild ab 0x0 (Release-Datei LR2021-Modem-A.bin bzw.
+    bin/lr2021_modem_A.bin: Bootloader + Partitionstabelle + Programm) oder nur das Programm (*.ino.bin).
+    Gibt dict(app, sha256, role, version, size, merged) zurück; app = genau das Programm für den App-Slot."""
+    data = bytes(data)
+    if len(data) < 1024 or data[0] != ESP_IMAGE_MAGIC:
+        raise ValueError("keine ESP32-Firmware (.bin)")
+    app, merged, app_err = None, False, None
+    try:
+        if esp_image_length(data) == len(data):
+            app = data                                     # nur das Programm
+    except ValueError as e:
+        app_err = e
+    if app is None and data[0x8000:0x8002] != b"\xaa\x50":
+        raise app_err or ValueError("weder ein ESP-Programm noch ein komplettes Abbild mit Partitionstabelle")
+    if app is None:
+        # komplettes Abbild: Partitionstabelle an 0x8000, Programm im ersten App-Slot
+        apps = []
+        for i in range(0x8000, 0x8000 + 0xC00, 32):
+            e = data[i:i + 32]
+            if len(e) < 32 or e[:2] != b"\xaa\x50":
+                break
+            typ, _sub, off, size = struct.unpack("<BBII", e[2:12])
+            if typ == 0:
+                apps.append((off, size))
+        if not apps:
+            raise ValueError("weder ein ESP-Programm noch ein komplettes Abbild mit Partitionstabelle")
+        off = min(apps)[0]
+        # build.sh schneidet 0xFF am Ende ab (der Flash ist dort ohnehin gelöscht) -> wieder auffüllen
+        region = data[off:] + b"\xff" * 64
+        length = esp_image_length(region)
+        if length > len(data) - off + 16:
+            raise ValueError("Programm im Abbild abgeschnitten")
+        app, merged = region[:length], True
+    if struct.unpack("<H", app[12:14])[0] != ESP_CHIP_ESP32S3:
+        raise ValueError("Programm ist nicht für den ESP32-S3")
+    if app[23] != 1:
+        raise ValueError("Programm ohne SHA-256")
+    ids = APP_ID_RE.findall(app)
+    if len(ids) != 1:
+        raise ValueError("keine LR2021-Modem-Firmware (Kennung fehlt)" if not ids else "Kennung mehrfach")
+    ver = tuple(int(x) for x in ids[0][:3])
+    return dict(app=app, sha256=hashlib.sha256(app).digest(), role=ids[0][3].decode(), version=ver,
+                size=len(app), merged=merged)
+
+
+def ota_begin_payload(fw):
+    """Nutzdaten von OTA_BEGIN: u32 size | sha256[32]."""
+    return struct.pack("<I", len(fw["app"])) + fw["sha256"]
+
+
+def ota_data_payload(app, off, chunk=OTA_CHUNK):
+    """Nutzdaten von OTA_DATA: u32 offset | bis zu chunk Bytes ab offset."""
+    return struct.pack("<I", off) + app[off:off + chunk]
 
 
 # --------------------------------------------------------------------------
@@ -300,7 +412,7 @@ class LrModem:
         data = resp[2:]
         if status != 0:
             rl = struct.unpack("<h", data[:2])[0] if status == -8 and len(data) >= 2 else None
-            raise ModemError(status, rl)
+            raise ModemError(status, rl, data)
         return data
 
     def close(self):
@@ -318,8 +430,8 @@ class LrModem:
             raise ModemError(-3)
         return ver
 
-    def info(self):
-        return self._decode_info(self.request(CMD["GET_INFO"]))
+    def info(self, timeout=None):
+        return self._decode_info(self.request(CMD["GET_INFO"], timeout=timeout))
 
     def config(self):
         d = self.request(CMD["GET_CONFIG"])
@@ -420,18 +532,110 @@ class LrModem:
     @staticmethod
     def _decode_fe(p):
         f = struct.unpack("<BBBBhhbbbb", bytes(p[:12]))
-        return dict(present=bool(f[0]), lna_mode=("automatisch", "an", "aus")[f[1]] if f[1] < 3 else f[1],
-                    lna_on=bool(f[2]), pa=bool(f[3]), noise_lna_dbm=f[4] / 10 if f[4] else None,
-                    noise_bypass_dbm=f[5] / 10 if f[5] else None, out_dbm=f[6], legal_dbm=f[7],
-                    drive_dbm=f[8], out_max_dbm=f[9])
+        d = dict(present=bool(f[0]), lna_mode=("automatisch", "an", "aus")[f[1]] if f[1] < 3 else f[1],
+                 lna_on=bool(f[2]), pa=bool(f[3]), noise_lna_dbm=f[4] / 10 if f[4] else None,
+                 noise_bypass_dbm=f[5] / 10 if f[5] else None, out_dbm=f[6], legal_dbm=f[7],
+                 drive_dbm=f[8], out_max_dbm=f[9])
+        if len(p) >= 21:                                   # ab Firmware 1.2.0: Kalibrierung
+            c = struct.unpack("<hhhhB", bytes(p[12:21]))
+            d.update(pa_gain_db=c[0] / 10, filter_loss_db=c[1] / 10, lna_gain_db=c[2] / 10,
+                     bypass_loss_db=c[3] / 10, calibrated=bool(c[4] & 1), cal_saved=bool(c[4] & 2))
+        return d
 
     def fe(self):
         """868-MHz-Frontend der Trägerplatine (ESP32 A, Firmware ab 1.1.0)."""
         return self._decode_fe(self.request(CMD["FE_GET"]))
 
-    def set_fe(self, lna_mode, save=True):
-        """LNA: 0 automatisch, 1 an, 2 aus."""
-        return self._decode_fe(self.request(CMD["FE_SET"], bytes([lna_mode, 1 if save else 0])))
+    def set_fe(self, lna_mode=None, save=True, pa_gain=None, filter_loss=None, lna_gain=None, bypass_loss=None,
+               defaults=False):
+        """LNA: 0 automatisch, 1 an, 2 aus, None = unverändert.
+        Kalibrierung (Firmware ab 1.2.0) in dB, None = unverändert; defaults=True setzt die Werkswerte."""
+        payload = bytes([0xFF if lna_mode is None else lna_mode, (1 if save else 0) | (2 if defaults else 0)])
+        cal = (pa_gain, filter_loss, lna_gain, bypass_loss)
+        if any(v is not None for v in cal):
+            payload += struct.pack("<hhhh", *(FE_CAL_KEEP if v is None else int(round(v * 10)) for v in cal))
+        return self._decode_fe(self.request(CMD["FE_SET"], payload, timeout=5))
+
+    # ---- Firmware-Update über die Leitung ----
+    def ota(self, firmware, progress=None, reboot_timeout=30):
+        """Neue Firmware in den freien App-Slot schreiben, prüfen lassen, Neustart abwarten.
+        firmware: Bytes der .bin-Datei oder Ergebnis von load_firmware(). progress(gesendet, gesamt).
+        Gibt die Info des neu gestarteten Modems zurück. Wirft ValueError/ModemError/TimeoutError."""
+        fw = firmware if isinstance(firmware, dict) else load_firmware(firmware)
+        if fw["version"] < OTA_MIN_VERSION:
+            raise ValueError("Firmware %d.%d.%d in der Datei ist älter als %d.%d.%d und wird vom Modem nicht angenommen"
+                             % (fw["version"] + OTA_MIN_VERSION))
+        info = self.info()
+        cur = tuple(int(x) for x in info["firmware"].split("."))
+        if cur < OTA_MIN_VERSION:
+            raise ValueError("Modem hat Firmware %s – Update über die Leitung erst ab %d.%d.%d. "
+                             "Einmal per USB flashen." % ((info["firmware"],) + OTA_MIN_VERSION))
+        if info["role"] != fw["role"]:
+            raise ValueError("Firmware ist für ESP32 %s, angeschlossen ist ESP32 %s" % (fw["role"], info["role"]))
+        app = fw["app"]
+        for attempt in range(20):                          # BUSY = es wird gerade gesendet
+            try:
+                d = self.request(CMD["OTA_BEGIN"], ota_begin_payload(fw), timeout=5)
+                break
+            except ModemError as e:
+                if e.status != -4 or attempt == 19:
+                    raise
+                time.sleep(0.5)
+        max_chunk, slot = struct.unpack("<HI", d[:6])
+        chunk = max(1, min(OTA_CHUNK, max_chunk))
+        try:
+            off, resync, stalls = 0, 0, 0
+            while off < len(app):
+                for tries in range(6):
+                    try:
+                        d = self.request(CMD["OTA_DATA"], ota_data_payload(app, off, chunk), timeout=3)
+                        nxt = struct.unpack("<I", d[:4])[0]
+                        break
+                    except TimeoutError:
+                        if tries == 5:
+                            raise
+                    except ModemError as e:
+                        # falscher Offset: das Modem nennt den erwarteten -> dort weitermachen
+                        if e.status == -3 and len(e.data) >= 4 and resync < 5:
+                            nxt = struct.unpack("<I", e.data[:4])[0]
+                            resync += 1
+                            if nxt <= len(app):
+                                break
+                        raise
+                if nxt > len(app):
+                    raise ValueError("Modem meldet Offset %d (Datei %d Bytes)" % (nxt, len(app)))
+                if nxt <= off:
+                    stalls += 1
+                    if stalls > 5:
+                        raise ValueError("Update kommt nicht voran (Offset %d)" % off)
+                off = nxt
+                if progress:
+                    progress(off, len(app))
+            self.request(CMD["OTA_END"], timeout=20)
+        except BaseException:
+            try:
+                self.request(CMD["OTA_ABORT"], timeout=2)
+            except Exception:
+                pass
+            raise
+        # Neustart abwarten: das Modem antwortet wieder, mit kleiner Laufzeit
+        t_end = time.time()
+        time.sleep(1.0)
+        while True:
+            try:
+                new = self.info(timeout=1.0)
+                if new["uptime_s"] < time.time() - t_end + 2:
+                    break
+            except (TimeoutError, ModemError):
+                pass
+            if time.time() - t_end > reboot_timeout:
+                raise TimeoutError("Modem meldet sich nach dem Update nicht")
+            time.sleep(0.3)
+        want = "%d.%d.%d" % fw["version"]
+        if new["firmware"] != want:
+            raise ValueError("Modem läuft mit %s statt %s (zurückgefallen auf die vorherige Firmware?)"
+                             % (new["firmware"], want))
+        return new
 
     def reset_stats(self):
         self.request(CMD["RESET_STATS"])
@@ -521,8 +725,17 @@ def main(argv=None):
     sub.add_parser("sleep")
     sub.add_parser("cad", help="Kanal prüfen (LoRa)")
     sub.add_parser("rssi", help="aktuelle Feldstärke (im Empfang)")
-    p = sub.add_parser("fe", help="868-MHz-Frontend: Zustand anzeigen, LNA einstellen")
+    p = sub.add_parser("fe", help="868-MHz-Frontend: Zustand anzeigen, LNA einstellen, kalibrieren")
     p.add_argument("--lna", choices=["auto", "an", "aus"], help="LNA-Betrieb (wird gespeichert)")
+    p.add_argument("--pa-gain", type=float, metavar="DB", help="gemessene PA-Verstärkung (15–32 dB, Firmware ≥ 1.2.0)")
+    p.add_argument("--filter-loss", type=float, metavar="DB", help="Dämpfung des Steckfilters (0–8 dB, 0 ohne Filter)")
+    p.add_argument("--lna-gain", type=float, metavar="DB", help="LNA-Verstärkung (5–22 dB)")
+    p.add_argument("--bypass-loss", type=float, metavar="DB", help="Dämpfung des Bypass (0–6 dB)")
+    p.add_argument("--defaults", action="store_true", help="Kalibrierung auf die Werkswerte zurücksetzen")
+    p.add_argument("--no-save", action="store_true", help="nur bis zum Neustart, nicht speichern")
+    p = sub.add_parser("ota", help="Firmware über diese Verbindung aktualisieren (Modem ab Firmware 1.2.0)")
+    p.add_argument("file", help="LR2021-Modem-A.bin / -B.bin (komplettes Abbild) oder lr2021_modem.ino.bin")
+    p.add_argument("--check", action="store_true", help="nur die Datei prüfen, nichts senden")
     p = sub.add_parser("autorx", help="nach dem Start automatisch empfangen")
     p.add_argument("on", type=int, choices=[0, 1])
     sub.add_parser("save", help="aktuelle Einstellungen dauerhaft speichern")
@@ -531,6 +744,19 @@ def main(argv=None):
     sub.add_parser("reboot", help="ESP32 neu starten")
 
     a = ap.parse_args(argv)
+    fw = None
+    if a.cmd == "ota":
+        try:
+            with open(a.file, "rb") as f:
+                fw = load_firmware(f.read())
+        except (OSError, ValueError) as e:
+            print("Fehler:", e, file=sys.stderr)
+            return 1
+        print("Datei: Firmware %d.%d.%d für ESP32 %s, Programm %d Bytes%s, SHA-256 %s" % (
+            fw["version"] + (fw["role"], fw["size"], " (aus komplettem Abbild)" if fw["merged"] else "",
+                             fw["sha256"].hex())))
+        if a.check:
+            return 0
     baud = a.baud or (115200 if ("USB" in a.port or "ACM" in a.port or a.port.upper().startswith("COM")) else 500000)
     m = LrModem(a.port, baud)
     m.on_log = lambda lvl, txt: print("[%s] %s" % (("INFO", "WARN", "FEHLER")[min(lvl, 2)], txt))
@@ -591,7 +817,22 @@ def main(argv=None):
         elif a.cmd == "rssi":
             print("%.1f dBm" % m.rssi())
         elif a.cmd == "fe":
-            _print_dict(m.set_fe({"auto": 0, "an": 1, "aus": 2}[a.lna]) if a.lna else m.fe())
+            cal = (a.pa_gain, a.filter_loss, a.lna_gain, a.bypass_loss)
+            if a.lna or a.defaults or any(v is not None for v in cal):
+                _print_dict(m.set_fe({"auto": 0, "an": 1, "aus": 2}[a.lna] if a.lna else None, save=not a.no_save,
+                                     pa_gain=a.pa_gain, filter_loss=a.filter_loss, lna_gain=a.lna_gain,
+                                     bypass_loss=a.bypass_loss, defaults=a.defaults))
+            else:
+                _print_dict(m.fe())
+        elif a.cmd == "ota":
+            t0 = time.time()
+
+            def prog(done, total):
+                print("\r%5.1f %%  %d/%d Bytes  %.0f s" % (100.0 * done / total, done, total, time.time() - t0),
+                      end="", flush=True)
+            new = m.ota(fw, prog)
+            print("\nfertig nach %.0f s – Modem läuft mit Firmware %s (ESP32 %s)" % (time.time() - t0, new["firmware"],
+                                                                              new["role"]))
         elif a.cmd == "autorx":
             m.set_autorx(bool(a.on))
             print("gesetzt – mit 'save' dauerhaft speichern")
@@ -608,9 +849,11 @@ def main(argv=None):
             m.reboot()
             print("Modem startet neu")
     except KeyboardInterrupt:
-        pass
-    except (ModemError, TimeoutError) as e:
-        print("Fehler:", e, file=sys.stderr)
+        if a.cmd == "ota":
+            print("\nUpdate abgebrochen – das Modem läuft mit der bisherigen Firmware weiter", file=sys.stderr)
+            return 1
+    except (ModemError, TimeoutError, ValueError) as e:
+        print("\nFehler:" if a.cmd == "ota" else "Fehler:", e, file=sys.stderr)
         return 1
     finally:
         m.close()

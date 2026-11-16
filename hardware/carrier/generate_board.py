@@ -311,7 +311,14 @@ for ref, (x, label) in ANT.items():
     place(lib_fp(ref, "SMA " + label, *SMA), x, SMA_Y, 0, "BWSMA-KWE-Z001", "C496551")
 
 # RF lines (50 ohm grounded coplanar waveguide) as point lists from the module pin to the SMA pin.
-# Each line has a pi network near the SMA: shunt (not fitted) - series 0 ohm - shunt (not fitted).
+# Each line has a pi network near the SMA: shunt (module side, not fitted) - series 0 ohm - shunt inductor
+# to ground at the connector (ESD: drains static charge of antenna and cable; its self-resonance lies just
+# above the band, so it is several hundred ohms there and costs < 0.05 dB). Radio module and front end
+# have DC-free antenna ports (antennas may be DC shorts), so the DC path to ground is harmless.
+ESD_L = {"RF_HF_LORA": ("68nH", "C162555"),      # LQG18HN68NJ00D, SRF >= 1.0 GHz (868 MHz)
+         "RF_HF_24": ("15nH", "C98006"),         # LQG18HN15NJ00D, SRF >= 2.8 GHz (2.4 GHz)
+         "RF_LF_24": ("15nH", "C98006"),
+         "RF_LF_LORA": ("100nH", "C98010")}      # LQG18HNR10J00D, SRF >= 800 MHz (433 MHz)
 RF_W, RF_GAP = 1.55, 0.30
 PI_SH_SMA, PI_SER, PI_SH_MOD = 9.4, 12.0, 14.6      # y of the pi-network parts (same for all four lines)
 hf_bot = CY_HF + 8.89
@@ -328,20 +335,22 @@ RF_LINES = {
                     (CX_LF + 11.62, SMA_Y)], +1),
 }
 PI_PARTS = {}   # line name -> (series ref, shunt module side ref, shunt sma side ref)
-rser, csh = 21, 9
+rser, csh, lesd = 21, 9, 10
 for name, (pts, side) in RF_LINES.items():
     top_need = PI_SER + 1.3 if name == "RF_HF_LORA" else PI_SH_MOD + 0.6
     xs = [a[0] for a, b in zip(pts, pts[1:]) if abs(a[0] - b[0]) < 1e-6 and min(a[1], b[1]) <= PI_SH_SMA - 0.6
           and max(a[1], b[1]) >= top_need]
     assert xs, name
     x = xs[0]
-    rs, c1, c2 = f"R{rser}", f"C{csh}", f"C{csh + 1}"
+    rs, c1, c2 = f"R{rser}", f"C{csh}", f"L{lesd}"
     smd(rs, "0R", R0603, x, PI_SER, 90, "C21189")
     smd(c1, "DNP", C0603, x + side * 0.8, PI_SH_MOD, 0 if side > 0 else 180, assemble=False)
-    smd(c2, "DNP", C0603, x + side * 0.8, PI_SH_SMA, 0 if side > 0 else 180, assemble=False)
+    smd(c2, ESD_L[name][0], ("Inductor_SMD", "L_0603_1608Metric"), x + side * 0.8, PI_SH_SMA,
+        0 if side > 0 else 180, ESD_L[name][1])
     PI_PARTS[name] = (rs, c1, c2)
     rser += 1
     csh += 2
+    lesd += 1
 
 
 # ---- 868 MHz front end: Skyworks SE2435L (1 W PA, LNA with bypass, T/R switch) ----
