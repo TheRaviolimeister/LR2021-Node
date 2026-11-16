@@ -20,6 +20,62 @@ static const char* g_irqSrc = "ISR";                // woher das letzte Ereignis
 // TX_DONE/TIMEOUT aus den IRQ-Flags des Chips; das Lesen der Flags per SPI stört das Senden nicht.
 // Im Empfang wird der Status zusätzlich alle 50 ms per SPI abgefragt, damit kein Paket verloren geht.
 
+// ---------------------------------------------------------------------------
+// 868-MHz-Frontend (SE2435L): PA, LNA mit Bypass, Sende-/Empfangsumschalter.
+// Betriebsarten (Datenblatt): Schlaf CSD=0 | Empfang/Senden über Bypass CSD=1 CPS=0 CTX=0 |
+// Empfang mit LNA CSD=1 CPS=1 CTX=0 | Senden über PA CSD=1 CTX=1.
+static bool g_fe = false;            // Frontend erkannt
+static bool g_fePa = false;          // aktuelle Sendeleistung braucht den PA
+static bool g_feLna = true;          // LNA im Empfang an
+static uint8_t g_feMode = 0;         // 0 automatisch, 1 LNA an, 2 LNA aus
+static int8_t g_feDrive = 0, g_feOut = 0, g_feLegal = 0;
+static int16_t g_feNoiseOn10 = 0, g_feNoiseOff10 = 0;
+static uint32_t g_feNextEval = 0;
+
+static void fePins(uint8_t csd, uint8_t cps, uint8_t ctx) {
+#if PIN_FE_CSD >= 0
+  digitalWrite(PIN_FE_CTX, ctx);
+  digitalWrite(PIN_FE_CPS, cps);
+  digitalWrite(PIN_FE_CSD, csd);
+#endif
+}
+static void feRx()    { if (g_fe) fePins(1, g_feLna ? 1 : 0, 0); }
+static void feTx()    { if (g_fe) fePins(1, 0, g_fePa ? 1 : 0); }
+static void feSleep() { if (g_fe) fePins(0, 0, 0); }
+
+static bool feDetect() {
+#if PIN_FE_CSD >= 0
+  pinMode(PIN_FE_CSD, INPUT_PULLUP);
+  delay(2);
+  bool low = digitalRead(PIN_FE_CSD) == LOW;      // 10k nach GND auf der Trägerplatine
+  if (!low) { pinMode(PIN_FE_CSD, INPUT); return false; }
+  digitalWrite(PIN_FE_CSD, LOW);
+  pinMode(PIN_FE_CSD, OUTPUT);
+  pinMode(PIN_FE_CPS, OUTPUT);
+  pinMode(PIN_FE_CTX, OUTPUT);
+  fePins(0, 0, 0);
+  return true;
+#else
+  return false;
+#endif
+}
+
+// Gesetzliche Grenze an der Buchse (EU SRD, ERC/REC 70-03; ERP mit 0-dBd-Antenne = 2,15 dBi)
+static int8_t legalMaxDbm(uint32_t f, uint32_t bw) {
+  uint32_t lo = f - bw / 2, hi = f + bw / 2;
+  if (lo >= 869400000UL && hi <= 869650000UL) return 27;   // 500 mW ERP
+  return 14;                                               // übrige 863–870 MHz: 25 mW ERP
+}
+
+// Empfangsverstärkung vor dem LR2021 (für RSSI an der Antenne)
+static float feRxGainDb() {
+  if (!g_fe) return 0.0f;
+  return (g_feLna ? FE_LNA_GAIN_DB : -FE_BYPASS_LOSS_DB) - FE_FILTER_LOSS_DB;
+}
+
+// höchste einstellbare Sub-GHz-Leistung: mit Frontend an der Buchse, sonst am LR2021
+static int8_t subGhzMax() { return g_fe ? FE_OUT_MAX_DBM : RADIOLIB_LR2021_LF_POUT_MAX; }
+
 static const uint32_t PERSIST_MAGIC = 0x4C524D31;   // "LRM1"
 #pragma pack(push, 1)
 struct Persist {
@@ -78,7 +134,7 @@ void Modem::loadDefaults() {
   fsk_.fixed_len = 0;
 
   lim_.allow_mask = (DEF_ALLOW_SUBGHZ_TX ? 1 : 0) | (DEF_ALLOW_24_TX ? 2 : 0);
-  lim_.max_pwr_subghz = DEF_MAX_PWR_SUBGHZ;
+  lim_.max_pwr_subghz = g_fe ? FE_OUT_MAX_DBM : DEF_MAX_PWR_SUBGHZ;
   lim_.max_pwr_24 = DEF_MAX_PWR_24;
   lim_.duty_permille = DEF_DUTY_PERMILLE;
   autoRx_ = false;
@@ -130,10 +186,23 @@ void Modem::begin(EventSink sink) {
   led(0, 0, LED_BRIGHTNESS);
 #endif
   pinMode(PIN_LR_IRQ, INPUT);
+  g_fe = feDetect();
   lrSpi.begin(PIN_LR_SCK, PIN_LR_MISO, PIN_LR_MOSI, -1);
   radio.tcxoVoltage = RadioLibTCXOVoltage_t::VoltageNone;   // Core2021 hat einen Quarz, keinen TCXO
   radio.irqDioNum = 11;                                     // DIO11 ist verdrahtet
   load();
+  if (g_fe) {
+    // gespeicherte Grenze aus der Zeit ohne Frontend (Chip-Maximum) auf das Frontend-Maximum heben
+    if (lim_.max_pwr_subghz == DEF_MAX_PWR_SUBGHZ) lim_.max_pwr_subghz = FE_OUT_MAX_DBM;
+    Preferences p;
+    if (p.begin("lrmodem", true)) { g_feMode = p.getUChar("fe", 0); p.end(); }
+    if (g_feMode > 2) g_feMode = 0;
+    g_feLna = (g_feMode != 2);
+    g_feNextEval = millis() + 20000;
+    feRx();
+    log(0, "868-MHz-Frontend erkannt (PA bis %d dBm, LNA %s)", FE_OUT_MAX_DBM,
+        g_feMode == 0 ? "automatisch" : g_feMode == 1 ? "an" : "aus");
+  }
   rxWanted_ = autoRx_;
   int16_t code = 0;
   int16_t st = applyConfig(&code);
@@ -184,6 +253,42 @@ static int16_t forceFrontEndCal(uint32_t f) {
   return radio.setFrequency(f, false);      // zurück: Abstand >= 20 MHz -> Kalibrierung für f
 }
 
+// Frontend: gewünschte Leistung an der Buchse -> LR2021-Pegel. Unter der kleinsten PA-Leistung
+// (LR2021-Minimum + PA-Verstärkung - Filter, etwa 14 dBm) läuft das Senden über den Bypass;
+// dort reicht der Pegel bis etwa 5 dBm. Die gesetzliche Grenze der Frequenz gilt immer.
+int8_t Modem::txDrive(uint32_t f, uint32_t bw, int8_t outDbm) {
+  bool is24 = f > 2000000000UL;
+  if (!g_fe || is24) {
+    int p = outDbm;
+    if (!is24 && p > RADIOLIB_LR2021_LF_POUT_MAX) p = RADIOLIB_LR2021_LF_POUT_MAX;   // gespeichert mit Frontend
+    g_fePa = false; g_feOut = (int8_t)p; g_feDrive = (int8_t)p;
+    return (int8_t)p;
+  }
+  int out = outDbm;
+  g_feLegal = legalMaxDbm(f, bw);
+#if FE_LEGAL_CAP
+  if (out > g_feLegal) {
+    log(1, "Frontend: %d dBm bei %.3f MHz nicht erlaubt, sende mit %d dBm", out, f / 1e6, g_feLegal);
+    out = g_feLegal;
+  }
+#endif
+  if (out > FE_OUT_MAX_DBM) out = FE_OUT_MAX_DBM;
+  const int paMin = RADIOLIB_LR2021_LF_POUT_MIN + FE_PA_GAIN_DB - FE_FILTER_LOSS_DB;
+  int d;
+  if (out >= paMin) {
+    g_fePa = true;
+    d = out - FE_PA_GAIN_DB + FE_FILTER_LOSS_DB;
+  } else {
+    g_fePa = false;
+    d = out + FE_BYPASS_LOSS_DB + FE_FILTER_LOSS_DB;
+  }
+  if (d > FE_DRIVE_MAX_DBM) d = FE_DRIVE_MAX_DBM;
+  if (d < RADIOLIB_LR2021_LF_POUT_MIN) d = RADIOLIB_LR2021_LF_POUT_MIN;
+  g_feDrive = (int8_t)d;
+  g_feOut = (int8_t)(g_fePa ? d + FE_PA_GAIN_DB - FE_FILTER_LOSS_DB : d - FE_BYPASS_LOSS_DB - FE_FILTER_LOSS_DB);
+  return g_feDrive;
+}
+
 int16_t Modem::applyConfig(int16_t* rc) {
   int16_t s;
   {
@@ -211,7 +316,7 @@ int16_t Modem::applyConfig(int16_t* rc) {
     c.bitRate = fsk_.bitrate_bps;
     c.frequencyDeviation = fsk_.fdev_hz;
     c.receiverBandwidth = fsk_.rxbw_hz;
-    c.power = fsk_.power_dbm;
+    c.power = txDrive(fsk_.freq_hz, fsk_.rxbw_hz, fsk_.power_dbm);
     c.preambleLength = fsk_.preamble_bits;
     s = radio.beginGFSK(c);
     if (s == RADIOLIB_ERR_NONE) s = forceFrontEndCal(fsk_.freq_hz);
@@ -234,7 +339,7 @@ int16_t Modem::applyConfig(int16_t* rc) {
     c.spreadingFactor = lora_.sf;
     c.codingRate = lora_.cr;
     c.syncWord = lora_.sync;
-    c.power = lora_.power_dbm;
+    c.power = txDrive(lora_.freq_hz, lora_.bw_hz, lora_.power_dbm);
     c.preambleLength = lora_.preamble;
     s = radio.begin(c);
     if (s == RADIOLIB_ERR_NONE) s = forceFrontEndCal(lora_.freq_hz);
@@ -284,7 +389,7 @@ int16_t Modem::setLora(const LoraCfg& c, int16_t* rc) {
   if (checkFreq(c.freq_hz, &is24) != ST_OK) return ST_BAD_PARAM;
   if (c.sf < 5 || c.sf > 12 || c.cr < 5 || c.cr > 8) return ST_BAD_PARAM;
   if (is24 ? (c.power_dbm < RADIOLIB_LR2021_HF_POUT_MIN || c.power_dbm > RADIOLIB_LR2021_HF_POUT_MAX)
-           : (c.power_dbm < RADIOLIB_LR2021_LF_POUT_MIN || c.power_dbm > RADIOLIB_LR2021_LF_POUT_MAX)) return ST_POWER_LIMIT;
+           : (c.power_dbm < RADIOLIB_LR2021_LF_POUT_MIN || c.power_dbm > subGhzMax())) return ST_POWER_LIMIT;
   if (c.preamble < 6) return ST_BAD_PARAM;
   if ((c.flags & 0x04) && c.implicit_len == 0) return ST_BAD_PARAM;
   if (rs_ == RS_TX) return ST_BUSY;
@@ -309,7 +414,7 @@ int16_t Modem::setFsk(const FskCfg& c, int16_t* rc) {
   if (c.sync_len < 1 || c.sync_len > 8 || c.crc_len > 2 || c.shaping > 4) return ST_BAD_PARAM;
   if (c.bitrate_bps < 600 || c.bitrate_bps > 2000000) return ST_BAD_PARAM;
   if (is24 ? (c.power_dbm < RADIOLIB_LR2021_HF_POUT_MIN || c.power_dbm > RADIOLIB_LR2021_HF_POUT_MAX)
-           : (c.power_dbm < RADIOLIB_LR2021_LF_POUT_MIN || c.power_dbm > RADIOLIB_LR2021_LF_POUT_MAX)) return ST_POWER_LIMIT;
+           : (c.power_dbm < RADIOLIB_LR2021_LF_POUT_MIN || c.power_dbm > subGhzMax())) return ST_POWER_LIMIT;
   if ((c.flags & 0x02) && c.fixed_len == 0) return ST_BAD_PARAM;
   if (rs_ == RS_TX) return ST_BUSY;
   FskCfg oldF = fsk_;
@@ -328,7 +433,7 @@ int16_t Modem::setFsk(const FskCfg& c, int16_t* rc) {
 }
 
 int16_t Modem::setLimits(const Limits& l) {
-  if (l.max_pwr_subghz > RADIOLIB_LR2021_LF_POUT_MAX || l.max_pwr_24 > RADIOLIB_LR2021_HF_POUT_MAX) return ST_BAD_PARAM;
+  if (l.max_pwr_subghz > subGhzMax() || l.max_pwr_24 > RADIOLIB_LR2021_HF_POUT_MAX) return ST_BAD_PARAM;
   if (l.duty_permille > 1000) return ST_BAD_PARAM;
   lim_ = l;
   return ST_OK;
@@ -379,6 +484,7 @@ int16_t Modem::startRx(int16_t* rc) {
   if (rs_ == RS_RX) return ST_OK;          // läuft schon
   wake();
   radio.standby();                         // Empfang immer aus dem Standby starten
+  feRx();
   drainRxFifo();
   g_irq = false;
   int16_t s = radio.startReceive();
@@ -408,6 +514,7 @@ int16_t Modem::sleep() {
   wake();
   radio.standby();
   radio.sleep();
+  feSleep();
   g_irq = false;
   rs_ = RS_SLEEP;
   led(0, 0, 0);
@@ -467,13 +574,14 @@ int16_t Modem::cad(uint8_t* busy, int16_t* rc) {
 int16_t Modem::rssi(int16_t* rssi10) {
   if (!radioOk_) return ST_NOT_READY;
   if (rs_ != RS_RX) return ST_NOT_READY;
-  float r = radio.getRSSI(false, true);
+  float r = radio.getRSSI(false, true) - feRxGainDb();     // bezogen auf die Antennenbuchse
   *rssi10 = (int16_t)(r * 10.0f);
   return ST_OK;
 }
 
 int16_t Modem::resetRadio(int16_t* rc) {
   if (rs_ == RS_TX) { st_.tx_fail++; finishTx(ST_NOT_READY); }
+  feRx();
   while (qCount_) {                               // verworfene Pakete melden
     cur_ = q_[qHead_];
     qHead_ = (qHead_ + 1) % TX_QUEUE_LEN;
@@ -567,10 +675,13 @@ void Modem::startNextTx() {
   g_irq = false;
   g_txIgnorePin = false;
   g_txSpurious = 0;
+  bool is24 = ((modem_ == MODEM_FSK) ? fsk_.freq_hz : lora_.freq_hz) > 2000000000UL;
+  if (!is24) feTx();                             // Frontend vor dem LR2021 auf Senden (PA oder Bypass)
   int16_t s = radio.startTransmit(cur_.data, cur_.len);
   if (s != RADIOLIB_ERR_NONE) {
     st_.tx_fail++;
     log(2, "startTransmit Fehler %d", s);
+    feRx();
     rs_ = RS_STANDBY;
     finishTx(ST_RADIO_ERROR);
     if (rxWanted_) { int16_t d; startRx(&d); }
@@ -597,7 +708,7 @@ void Modem::handleRx() {
     return;
   }
   if (len > sizeof(buf)) len = sizeof(buf);
-  float rssi = radio.getRSSI(true);
+  float rssi = radio.getRSSI(true) - feRxGainDb();          // bezogen auf die Antennenbuchse
   float snr = (modem_ == MODEM_LORA) ? radio.getSNR() : 0.0f;
   int32_t fe = (modem_ == MODEM_LORA) ? radio.getFrequencyError() : 0;
   int16_t s = radio.readData(buf, len);
@@ -653,6 +764,7 @@ void Modem::handleIrq() {
       log(0, "TX ok nach %lu ms (berechnet %lu), %u Fehl-IRQs ignoriert",
           (unsigned long)el, (unsigned long)(txToaUs_ / 1000), g_txSpurious);
     radio.finishTransmit();
+    feRx();
     rs_ = RS_STANDBY;
     st_.tx_ok++;
     addAirtime(txToaUs_ / 1000 + 1);
@@ -705,6 +817,7 @@ void Modem::loop() {
     uint32_t limit = (uint32_t)(txToaUs_ / 1000.0f * TX_TIMEOUT_MARGIN) + 250;
     if (millis() - txStart_ > limit) {
       radio.finishTransmit();
+      feRx();
       rs_ = RS_STANDBY;
       st_.tx_fail++;
       log(2, "TX-Zeitüberschreitung (IRQ kam nicht)");
@@ -713,6 +826,7 @@ void Modem::loop() {
     }
   }
   if (rs_ != RS_TX) startNextTx();
+  if (g_fe && g_feMode == 0 && rs_ == RS_RX && (int32_t)(millis() - g_feNextEval) >= 0) feEvaluate();
   if (ledOffAt_ && (int32_t)(millis() - ledOffAt_) >= 0) {
     ledOffAt_ = 0;
     if (rs_ == RS_RX) led(0, 0, LED_BRIGHTNESS / 3 + 1); else led(0, 0, 0);
@@ -739,6 +853,85 @@ void Modem::fillInfo(InfoBlock& i) {
   i.vbat_mv = vbatMv_;
   i.subghz_min_hz = SUBGHZ_MIN_HZ;
   i.subghz_max_hz = SUBGHZ_MAX_HZ;
+}
+
+// LNA-Automatik: Rauschboden abwechselnd mit und ohne LNA messen (Median aus 7 Paaren).
+// Der Unterschied d beider Werte am LR2021 verrät, wer das Rauschen bestimmt:
+//  - Empfänger rauscht selbst (ruhiger Standort): d ist deutlich kleiner als der Verstärkungsunterschied
+//    G (LNA 16 dB gegen Bypass -2 dB = 18 dB). Der LNA bringt dann G - d dB mehr Empfindlichkeit -> an.
+//  - Rauschen/Störungen von außen überwiegen (Stadt, Sender in der Nähe): d ~ G, der LNA bringt nichts,
+//    macht den Empfänger aber übersteuerungsanfällig -> aus (wie das Abschalten des LNA bei der Station G3).
+// Zusätzlich aus, wenn das Rauschen mit LNA am LR2021 über -80 dBm liegt (Übersteuerung droht).
+void Modem::feEvaluate() {
+  const int N = 7;
+  g_feNextEval = millis() + FE_AUTO_PERIOD_MS;
+  uint32_t f0 = radio.getIrqFlags();
+  if (f0 != 0xFFFFFFFFUL && (f0 & (RADIOLIB_LR2021_IRQ_PREAMBLE_DETECTED | RADIOLIB_LR2021_IRQ_LORA_HEADER_VALID |
+                                   RADIOLIB_LR2021_IRQ_RX_DONE))) {
+    g_feNextEval = millis() + 5000;          // gerade kommt etwas an: später nochmal
+    return;
+  }
+  bool lna0 = g_feLna;
+  float on[N], off[N];
+  for (int i = 0; i < N; i++) {
+    g_feLna = true;  feRx(); delay(3); on[i] = radio.getRSSI(false, true);
+    g_feLna = false; feRx(); delay(3); off[i] = radio.getRSSI(false, true);
+  }
+  g_feLna = lna0;
+  feRx();
+  uint32_t f1 = radio.getIrqFlags();
+  if (f1 != 0xFFFFFFFFUL && (f1 & (RADIOLIB_LR2021_IRQ_PREAMBLE_DETECTED | RADIOLIB_LR2021_IRQ_RX_DONE))) {
+    g_feNextEval = millis() + 5000;          // Paket während der Messung: Ergebnis verwerfen
+    return;
+  }
+  auto median = [](float* a, int n) {
+    for (int i = 1; i < n; i++) for (int j = i; j > 0 && a[j] < a[j - 1]; j--) { float t = a[j]; a[j] = a[j - 1]; a[j - 1] = t; }
+    return a[n / 2];
+  };
+  float mOn = median(on, N), mOff = median(off, N);
+  float d = mOn - mOff;
+  const float G = FE_LNA_GAIN_DB + FE_BYPASS_LOSS_DB;
+  bool lna = g_feLna;
+  if (mOn > -80.0f) lna = false;
+  else if (d < G - 3.0f) lna = true;          // LNA bringt mehr als 3 dB
+  else if (d > G - 1.0f) lna = false;         // LNA bringt weniger als 1 dB
+  g_feNoiseOn10 = (int16_t)((mOn - (FE_LNA_GAIN_DB - FE_FILTER_LOSS_DB)) * 10.0f);
+  g_feNoiseOff10 = (int16_t)((mOff + FE_BYPASS_LOSS_DB + FE_FILTER_LOSS_DB) * 10.0f);
+  if (lna != g_feLna) {
+    g_feLna = lna;
+    feRx();
+    log(0, "Frontend: LNA %s (Rauschen am LR2021 mit LNA %.1f, ohne %.1f dBm, Gewinn durch LNA %.1f dB)",
+        lna ? "an" : "aus", mOn, mOff, G - d);
+  }
+}
+
+void Modem::fillFe(FeInfo& f) {
+  memset(&f, 0, sizeof(f));
+  f.present = g_fe ? 1 : 0;
+  f.lna_mode = g_feMode;
+  f.lna_on = (g_fe && g_feLna) ? 1 : 0;
+  f.pa = g_fePa ? 1 : 0;
+  f.noise_on10 = g_feNoiseOn10;
+  f.noise_off10 = g_feNoiseOff10;
+  f.out_dbm = g_feOut;
+  f.legal_dbm = g_fe ? g_feLegal : 0;
+  f.drive_dbm = g_feDrive;
+  f.out_max_dbm = subGhzMax();
+}
+
+int16_t Modem::setFeMode(uint8_t mode, bool save) {
+  if (mode > 2) return ST_BAD_PARAM;
+  if (!g_fe) return ST_NOT_READY;
+  g_feMode = mode;
+  if (mode == 1) g_feLna = true;
+  else if (mode == 2) g_feLna = false;
+  else g_feNextEval = millis() + 1000;        // automatisch: gleich messen
+  if (rs_ != RS_TX && rs_ != RS_SLEEP) feRx();
+  if (save) {
+    Preferences p;
+    if (p.begin("lrmodem", false)) { p.putUChar("fe", mode); p.end(); }
+  }
+  return ST_OK;
 }
 
 void Modem::fillStats(Stats& s) {

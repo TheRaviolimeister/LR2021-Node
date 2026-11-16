@@ -6,8 +6,8 @@
 #include <stdint.h>
 
 #define FW_VERSION_MAJOR 1
-#define FW_VERSION_MINOR 0
-#define FW_VERSION_PATCH 16
+#define FW_VERSION_MINOR 1
+#define FW_VERSION_PATCH 0
 
 #if !defined(MODEM_ROLE_A) && !defined(MODEM_ROLE_B)
   #define MODEM_ROLE_A
@@ -37,6 +37,11 @@
   #define DEF_SYNC          0x2B
   #define DEF_POWER_DBM     14
   #define DEF_PREAMBLE      16
+  // 868-MHz-Frontend SE2435L (PA bis 1 W, LNA mit Bypass) auf der Trägerplatine ab v1.3.
+  // Wird beim Start erkannt: CSD hat dort 10k nach GND, mit internem Pull-up liest der Pin LOW.
+  #define PIN_FE_CSD        42          // Frontend an (LOW = Schlaf)
+  #define PIN_FE_CPS        41          // HIGH = LNA an, LOW = Bypass
+  #define PIN_FE_CTX        40          // HIGH = Senden über den PA
 #else
   #define MODEM_ROLE_CHAR   'B'
   #define MODEM_BAND_ID     2           // 2 = LF-Modul (433)
@@ -57,7 +62,22 @@
   #define DEF_SYNC          0x12
   #define DEF_POWER_DBM     10
   #define DEF_PREAMBLE      8
+  #define PIN_FE_CSD        -1          // kein Frontend am 433-MHz-Modul
+  #define PIN_FE_CPS        -1
+  #define PIN_FE_CTX        -1
 #endif
+
+// Frontend-Kennwerte (SE2435L-Datenblatt 860–870 MHz, VCC 4,7 V) und Steckfilter (SAW 868–870 MHz).
+// Die Leistung in SET_LORA/SET_FSK gilt mit Frontend an der Antennenbuchse; die Firmware rechnet sie
+// auf den LR2021-Pegel um. Richtwerte – bei Bedarf mit einem Messgerät nachstellen.
+#define FE_PA_GAIN_DB       26          // Kleinsignal-Verstärkung des PA
+#define FE_LNA_GAIN_DB      16
+#define FE_BYPASS_LOSS_DB   2
+#define FE_FILTER_LOSS_DB   3           // Steckfilter zwischen Modul und Frontend
+#define FE_OUT_MAX_DBM      30          // Hardware-Maximum an der Antennenbuchse
+#define FE_DRIVE_MAX_DBM    8           // LR2021-Pegel höchstens (TR-Eingang des SE2435L: max. +10 dBm)
+#define FE_LEGAL_CAP        1           // EU-SRD-Grenzen immer einhalten (ERP, Antenne bis 2,15 dBi)
+#define FE_AUTO_PERIOD_MS   300000UL    // LNA-Automatik: alle 5 Minuten Rauschboden mit/ohne LNA messen
 
 // 2,4-GHz-Bereich (beide Module)
 #define HF24_MIN_HZ         2400000000UL

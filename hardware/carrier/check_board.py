@@ -173,14 +173,90 @@ for esp, pin_en, pin_io0, (qe, qi), (re_, ri), (pe, pi_) in (
         expect_same((q, "3"), (esp, devkit_pad(target)), f"{q} drain -> {esp} {target}")
         if net_of(q, "2") != "GND" or net_of(pd, "2") != "GND" or net_of(pd, "1") != net_of(q, "1"):
             errors.append(f"{q}: source / pull-down wrong")
-# antennas: module pad -> series 0R -> SMA centre pin, SMA body = GND
-for core, k, sma in (("U3", "9", "J13"), ("U3", "1", "J14"), ("U4", "1", "J15"), ("U4", "9", "J16")):
+# 868 MHz front end, Skyworks SE2435L (pin names from the data sheet, Table 1) and its LDO TLV75901 (DRV)
+SE = {1: "CSD", 2: "PA_IN", 3: "CPS", 4: "CTX", 5: "TX_FLT", 6: "TR", 7: "ANT_SEL", 8: "GND", 9: "LNA_IN",
+      10: "NC", 11: "RX_FLT", 12: "ANT2", 13: "NC", 14: "ANT1", 15: "NC", 16: "TX_IN", 17: "NC", 18: "NC",
+      19: "NC", 20: "PA_OUT", 21: "VCC2", 22: "NC", 23: "VCC0", 24: "VCC1", 25: "PAD"}
+LDO = {1: "OUT", 2: "FB", 3: "GND", 4: "EN", 5: "PG", 6: "IN", 7: "PAD"}
+SEp = {v: str(k) for k, v in SE.items() if v != "NC"}
+FW_FE = {"CSD": "GPIO42", "CPS": "GPIO41", "CTX": "GPIO40"}       # firmware/lr2021_modem/config.h, role A
+
+
+def shunt(node, part, what):
+    """part between the net of `node` and GND."""
+    if {net_of(part, "1"), net_of(part, "2")} != {net_of(*node), "GND"}:
+        errors.append(f"{what}: {part} is not a shunt from {net_of(*node)} to GND")
+
+
+def series(a, b, part, what):
+    expect_via(a, b, part, what)
+
+
+expect_same(("U3", "9"), ("J22", "4"), "Core2021-HF LORA_ANT -> filter socket pin 4")
+expect_same(("J22", "2"), ("U8", SEp["TR"]), "filter socket pin 2 -> SE2435L TR")
+for k in ("1", "3", "5"):
+    if net_of("J22", k) != "GND":
+        errors.append(f"filter socket pin {k} not GND")
+series(("U8", SEp["TX_FLT"]), ("U8", SEp["PA_IN"]), "C35", "SE2435L TX_FLT -> 3.3 pF -> PA_IN")
+series(("U8", SEp["RX_FLT"]), ("U8", SEp["LNA_IN"]), "R33", "SE2435L RX_FLT -> 0R -> LNA_IN")
+for name in ("ANT_SEL", "GND", "PAD"):
+    if net_of("U8", SEp[name]) != "GND":
+        errors.append(f"SE2435L {name} not GND")
+for k in ("10", "12", "19", "22"):          # not connected / do not connect
+    if net_of("U8", k) != "":
+        errors.append(f"SE2435L pin {k} ({SE[int(k)]}) connected to {net_of('U8', k)}")
+# PA output match (EK5): PA_OUT - L2 - N1 (C30, C31 to GND) - L1 - TX_IN, trap L7 + C32 at TX_IN
+series(("U8", SEp["PA_OUT"]), ("L1", "2"), "L2", "PA_OUT -> L2 -> N1")
+series(("L2", "2"), ("U8", SEp["TX_IN"]), "L1", "N1 -> L1 -> TX_IN")
+shunt(("L2", "2"), "C30", "N1 10 pF")
+shunt(("L2", "2"), "C31", "N1 5 pF")
+series(("U8", SEp["TX_IN"]), ("C32", "1"), "L7", "TX_IN trap L7")
+shunt(("L7", "2"), "C32", "TX_IN trap C32")
+# antenna low-pass: ANT1 - L8 - N3 (trap L9 + C33) - L6 - N4 (C9 to GND) - R21 - SMA
+series(("U8", SEp["ANT1"]), ("L6", "1"), "L8", "ANT1 -> L8 -> N3")
+series(("L8", "2"), ("R21", "1"), "L6", "N3 -> L6 -> N4")
+series(("L8", "2"), ("C33", "2"), "L9", "N3 trap L9")
+shunt(("L9", "1"), "C33", "N3 trap C33")
+shunt(("L6", "2"), "C9", "N4 2.7 pF")
+series(("L6", "2"), ("J13", "1"), "R21", "N4 -> R21 -> SMA 868")
+# supplies
+for pin, ind in (("VCC2", "L5"), ("VCC0", "L3"), ("VCC1", "L4")):
+    series(("U8", SEp[pin]), ("U9", "1"), ind, f"{pin} feed {ind}")
+shunt(("U8", SEp["VCC0"]), "C26", "VCC0 22 pF")
+shunt(("U8", SEp["VCC1"]), "C27", "VCC1 100 pF")
+shunt(("U8", SEp["VCC1"]), "C28", "VCC1 47 pF")
+for c in ("C21", "C22", "C23", "C24", "C25"):
+    shunt(("U9", "1"), c, f"PA supply {c}")
+expect_same(("U9", "6"), ("U9", "4"), "LDO EN = IN (always on)")
+series(("F1", "2"), ("U9", "6"), "FB1", "5 V -> ferrite -> LDO IN")
+shunt(("U9", "6"), "C20", "LDO input capacitor")
+series(("U9", "1"), ("U9", "2"), "R31", "LDO OUT -> R31 -> FB")
+shunt(("U9", "2"), "R32", "LDO FB -> R32 -> GND")
+for k in ("3", "7"):
+    if net_of("U9", k) != "GND":
+        errors.append(f"TLV75901 {LDO[int(k)]} not GND")
+_val = {fp.GetReference(): fp.GetValue() for fp in board.GetFootprints()}
+_r = lambda s: float(s.lower().replace("k", "e3"))
+vpa = 0.55 * (1 + _r(_val["R31"]) / _r(_val["R32"]))
+if not 4.0 <= vpa <= 4.8:
+    errors.append(f"PA supply {vpa:.2f} V outside 4.0-4.8 V (SE2435L recommended range)")
+rows.append(f"PA supply 0.55 V x (1 + {_val['R31']}/{_val['R32']}) = {vpa:.2f} V")
+# control lines ESP32 A -> 1k -> SE2435L, pull-down on CSD
+for sig, r in (("CSD", "R34"), ("CPS", "R35"), ("CTX", "R36")):
+    series(("U1", devkit_pad(FW_FE[sig])), ("U8", SEp[sig]), r, f"ESP32 A {FW_FE[sig]} -> {r} -> SE2435L {sig}")
+    rows.append(f"U1 {FW_FE[sig]:7s} -> {r} -> U8 {sig}")
+shunt(("U1", devkit_pad(FW_FE["CSD"])), "R37", "CSD pull-down")
+# antennas: module pad -> series 0R -> SMA centre pin, SMA body = GND (868 MHz: through the front end, above)
+for core, k, sma in (("U3", "1", "J14"), ("U4", "1", "J15"), ("U4", "9", "J16")):
     nm, ns = net_of(core, k), net_of(sma, "1")
     rs = [r for r in ("R21", "R22", "R23", "R24") if {net_of(r, "1"), net_of(r, "2")} == {nm, ns}]
     if len(rs) != 1:
         errors.append(f"{core} {CORE[int(k) - 1]} -> {sma}: no series part")
     if net_of(sma, "2") != "GND":
         errors.append(f"{sma} body not GND")
+
+if net_of("J13", "2") != "GND":
+    errors.append("J13 body not GND")
 
 print("connections checked against the pin names:")
 for r in rows:
@@ -230,12 +306,17 @@ bottom = sum(mm(t.GetLength()) for t in tracks if t.GetLayer() == pcbnew.B_Cu an
 print(f"signal copper on the bottom layer: {bottom:.0f} mm")
 
 # ---- spacing between parts ------------------------------------------------------------------------
+# Courtyards already include a margin of 0.25 mm around the body. Small passives and the chips of the
+# 868 MHz front end may touch courtyards (>= 0.5 mm between the bodies, short RF connections);
+# all other parts keep 0.25 mm between their courtyards.
+SMALL = ("C_0402", "R_0402", "L_0402", "C_0603", "R_0603", "L_0603", "C_0805", "QFN-24", "WSON-6")
 boxes = []
 for fp in board.GetFootprints():
     c = fp.GetCourtyard(pcbnew.F_CrtYd)
+    small = fp.GetFPID().GetLibItemName().wx_str().startswith(SMALL)
     for k in range(c.OutlineCount()):        # each outline separately (radio sockets: one per pin row)
         bb = c.Outline(k).BBox()
-        boxes.append((fp.GetReference(), mm(bb.GetLeft()), mm(bb.GetTop()), mm(bb.GetRight()), mm(bb.GetBottom())))
+        boxes.append((fp.GetReference(), mm(bb.GetLeft()), mm(bb.GetTop()), mm(bb.GetRight()), mm(bb.GetBottom()), small))
 close = []
 for a, b in itertools.combinations(boxes, 2):
     if a[0] == b[0]:
@@ -243,9 +324,11 @@ for a, b in itertools.combinations(boxes, 2):
     dx = max(a[1] - b[3], b[1] - a[3], 0)
     dy = max(a[2] - b[4], b[2] - a[4], 0)
     d = math.hypot(dx, dy)
-    if d < 0.25:
+    overlap = dx == 0 and dy == 0 and min(a[3], b[3]) - max(a[1], b[1]) > 1e-3 and min(a[4], b[4]) - max(a[2], b[2]) > 1e-3
+    if overlap or (d < 0.25 and not (a[5] and b[5])):
         close.append((d, a[0], b[0]))
-print("\nparts closer than 0.25 mm (outline to outline):", len(close))
+print("\nparts too close (courtyards overlap; or < 0.25 mm apart unless both are small passives/RF chips):",
+      len(close))
 for d, a, b in sorted(close):
     print(f"   {a}-{b}: {d:.2f} mm")
 sys.exit(1 if errors else 0)

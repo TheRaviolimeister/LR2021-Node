@@ -37,6 +37,8 @@ COBS( type | seq | payload … | crc_lo | crc_hi )  0x00
 | 0x13 SAVE | – | – (store settings as power-on defaults) |
 | 0x14 FACTORY | – | – (erase stored settings, restart) |
 | 0x15 SET_AUTORX | u8 0/1 | – |
+| 0x16 FE_GET | – | FeInfo (868 MHz front end of the carrier board; ESP32 A, firmware ≥ 1.1.0) |
+| 0x17 FE_SET | u8 lna_mode (0 automatic, 1 on, 2 off), u8 save | FeInfo; status −11 if there is no front end |
 | 0x20 TX | u8 flags (bit0 = LBT), u16 tx_id, 1–255 bytes data | – (packet queued, max. 8). Result arrives as EVT_TX_DONE |
 | 0x21 RX_START | – | – receive continuously, also after every transmission |
 | 0x22 STANDBY | – | – |
@@ -82,7 +84,20 @@ InfoBlock(31 B): u8 proto, u8 fw_major, u8 fw_minor, u8 fw_patch, char role ('A'
 
 Stats    (36 B): u32 rx_ok, rx_crc_err, tx_ok, tx_fail, tx_rejected, airtime_total_ms,
                  airtime_hour_ms, link_bad_frames, cad_busy
+
+FeInfo   (12 B): u8 present, u8 lna_mode (0 automatic, 1 on, 2 off), u8 lna_on, u8 pa (transmitting
+                 via the PA), i16 noise_on×10, i16 noise_off×10 (noise floor at the antenna with and
+                 without LNA, dBm; 0 = not measured yet), i8 out_dbm (power at the connector after the
+                 legal limit), i8 legal_dbm, i8 drive_dbm (LR2021 level), i8 out_max_dbm
 ```
+
+### 868 MHz front end (carrier board)
+
+With the front end (detected at start-up), `power_dbm` in LoraCfg/FskCfg and `max_pwr_subghz` in
+Limits mean the power at the antenna connector, up to `out_max_dbm` (30). The firmware converts it
+into the LR2021 level (PA from 14 dBm, bypass below) and never exceeds the legal limit of the
+frequency (27 dBm in 869.40–869.65 MHz, otherwise 14 dBm). RSSI values (RX event, GET_RSSI) refer
+to the antenna connector, the gain of the LNA and the loss of the filter are taken out.
 
 ## Status values
 0 OK · −1 unknown command · −2 wrong length · −3 invalid parameter · −4 busy ·

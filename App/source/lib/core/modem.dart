@@ -10,7 +10,8 @@ import '../i18n.dart';
 
 class Cmd {
   static const ping = 0x01, getInfo = 0x02, getConfig = 0x03, setLora = 0x10, setFsk = 0x11,
-      setLimits = 0x12, save = 0x13, factory = 0x14, setAutoRx = 0x15, tx = 0x20, rxStart = 0x21,
+      setLimits = 0x12, save = 0x13, factory = 0x14, setAutoRx = 0x15, feGet = 0x16, feSet = 0x17,
+      tx = 0x20, rxStart = 0x21,
       standby = 0x22, sleep = 0x23, cad = 0x24, getRssi = 0x25, getStats = 0x30, resetStats = 0x31,
       resetRadio = 0x40, reboot = 0x41;
 }
@@ -190,6 +191,45 @@ class Limits {
       .toBytes();
   static Limits read(Rd r) =>
       Limits(allowMask: r.u8(), maxPwrSub: r.i8(), maxPwr24: r.i8(), dutyPermille: r.u16());
+}
+
+/// 868-MHz-Frontend (SE2435L auf der Trägerplatine): PA bis 1 W, LNA mit Bypass.
+class FeInfo {
+  final bool present, lnaOn, pa;
+  final int lnaMode; // 0 automatisch, 1 an, 2 aus
+  final double? noiseOn, noiseOff; // Rauschboden an der Antenne (dBm), null = noch nicht gemessen
+  final int outDbm, legalDbm, driveDbm, outMaxDbm;
+  FeInfo({
+    required this.present,
+    required this.lnaMode,
+    required this.lnaOn,
+    required this.pa,
+    this.noiseOn,
+    this.noiseOff,
+    required this.outDbm,
+    required this.legalDbm,
+    required this.driveDbm,
+    required this.outMaxDbm,
+  });
+
+  static FeInfo? parse(Uint8List p) {
+    if (p.length < 12) return null;
+    final r = Rd(p);
+    final present = r.u8() != 0, mode = r.u8(), lna = r.u8() != 0, pa = r.u8() != 0;
+    final on = r.i16(), off = r.i16();
+    return FeInfo(
+      present: present,
+      lnaMode: mode,
+      lnaOn: lna,
+      pa: pa,
+      noiseOn: on == 0 ? null : on / 10.0,
+      noiseOff: off == 0 ? null : off / 10.0,
+      outDbm: r.i8(),
+      legalDbm: r.i8(),
+      driveDbm: r.i8(),
+      outMaxDbm: r.i8(),
+    );
+  }
 }
 
 class ModemConfig {
@@ -414,6 +454,19 @@ class ModemClient {
   Future<void> save() => request(Cmd.save, const [], const Duration(seconds: 3));
   Future<void> factoryReset() => request(Cmd.factory);
   Future<void> setAutoRx(bool on) => request(Cmd.setAutoRx, [on ? 1 : 0]);
+
+  /// Frontend-Status; null bei älterer Firmware (kennt den Befehl nicht) oder ohne Frontend.
+  Future<FeInfo?> fe() async {
+    try {
+      final f = FeInfo.parse(await request(Cmd.feGet));
+      return (f != null && f.present) ? f : null;
+    } on ModemError {
+      return null;
+    }
+  }
+
+  Future<FeInfo?> setFe(int lnaMode, {bool save = true}) async =>
+      FeInfo.parse(await request(Cmd.feSet, [lnaMode, save ? 1 : 0], const Duration(seconds: 3)));
   Future<void> rxStart() => request(Cmd.rxStart);
   Future<void> standby() => request(Cmd.standby);
   Future<void> sleep() => request(Cmd.sleep);

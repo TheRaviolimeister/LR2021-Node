@@ -4,6 +4,9 @@
   2.15 dBi; chip maximum 22 dBm sub-GHz, 12 dBm at 2.4 GHz.
 - 869.4–869.65 MHz: 27 dBm ERP → 22 dBm at the chip; other 868 MHz sub-bands 14 dBm;
   433.05–434.79 MHz: 10 dBm.
+- **Carrier board with the 868 MHz front end (PA up to 30 dBm):** the app detects it and then allows the
+  full 27 dBm in 869.4–869.65 MHz (Meshtastic EU_868, MeshCore). The modem firmware enforces the
+  legal limits on its own as well (27 dBm there, 14 dBm everywhere else), whatever is requested.
 - Licence switch (callsign required): full power on 70 cm / 13 cm. There Meshtastic runs unencrypted
   (empty PSK, channel hash from the name only), with `is_licensed` and the callsign in the node info;
   only unencrypted packets are relayed there. 868 MHz always stays encrypted.

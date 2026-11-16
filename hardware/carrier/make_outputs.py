@@ -141,6 +141,7 @@ with open(os.path.join(OUT, "hand-solder.csv"), "w", newline="") as f:
         "U3": "2x female header 1x8, 2.54 mm",
         "U4": "2x female header 1x8, 2.54 mm",
         "U5": "female header 2x20, 2.54 mm",
+        "J22": "female header 1x5, 2.54 mm (868 MHz filter module, see hardware/filter868)",
     }
     for (val, name, lcsc), refs in sorted(hand.items(), key=lambda kv: natkey(kv[1][0])):
         refs = sorted(refs, key=natkey)

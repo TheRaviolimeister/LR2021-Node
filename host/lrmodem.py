@@ -33,7 +33,7 @@ PROTO_VERSION = 1
 PROTO_MAGIC = 0x444D524C
 
 CMD = dict(PING=0x01, GET_INFO=0x02, GET_CONFIG=0x03, SET_LORA=0x10, SET_FSK=0x11, SET_LIMITS=0x12,
-           SAVE=0x13, FACTORY=0x14, SET_AUTORX=0x15, TX=0x20, RX_START=0x21, STANDBY=0x22, SLEEP=0x23,
+           SAVE=0x13, FACTORY=0x14, SET_AUTORX=0x15, FE_GET=0x16, FE_SET=0x17, TX=0x20, RX_START=0x21, STANDBY=0x22, SLEEP=0x23,
            CAD=0x24, GET_RSSI=0x25, GET_STATS=0x30, RESET_STATS=0x31, RESET_RADIO=0x40, REBOOT=0x41)
 EVT_BOOT, EVT_RX, EVT_TX_DONE, EVT_LOG, EVT_ERROR = 0xE0, 0xE1, 0xE2, 0xE4, 0xE5
 
@@ -417,6 +417,22 @@ class LrModem:
                  "airtime_last_hour_ms", "link_bad_frames", "cad_busy"]
         return dict(zip(names, struct.unpack(FMT_STATS, self.request(CMD["GET_STATS"])[:36])))
 
+    @staticmethod
+    def _decode_fe(p):
+        f = struct.unpack("<BBBBhhbbbb", bytes(p[:12]))
+        return dict(present=bool(f[0]), lna_mode=("automatisch", "an", "aus")[f[1]] if f[1] < 3 else f[1],
+                    lna_on=bool(f[2]), pa=bool(f[3]), noise_lna_dbm=f[4] / 10 if f[4] else None,
+                    noise_bypass_dbm=f[5] / 10 if f[5] else None, out_dbm=f[6], legal_dbm=f[7],
+                    drive_dbm=f[8], out_max_dbm=f[9])
+
+    def fe(self):
+        """868-MHz-Frontend der Trägerplatine (ESP32 A, Firmware ab 1.1.0)."""
+        return self._decode_fe(self.request(CMD["FE_GET"]))
+
+    def set_fe(self, lna_mode, save=True):
+        """LNA: 0 automatisch, 1 an, 2 aus."""
+        return self._decode_fe(self.request(CMD["FE_SET"], bytes([lna_mode, 1 if save else 0])))
+
     def reset_stats(self):
         self.request(CMD["RESET_STATS"])
 
@@ -505,6 +521,8 @@ def main(argv=None):
     sub.add_parser("sleep")
     sub.add_parser("cad", help="Kanal prüfen (LoRa)")
     sub.add_parser("rssi", help="aktuelle Feldstärke (im Empfang)")
+    p = sub.add_parser("fe", help="868-MHz-Frontend: Zustand anzeigen, LNA einstellen")
+    p.add_argument("--lna", choices=["auto", "an", "aus"], help="LNA-Betrieb (wird gespeichert)")
     p = sub.add_parser("autorx", help="nach dem Start automatisch empfangen")
     p.add_argument("on", type=int, choices=[0, 1])
     sub.add_parser("save", help="aktuelle Einstellungen dauerhaft speichern")
@@ -572,6 +590,8 @@ def main(argv=None):
             print("Kanal belegt" if m.cad() else "Kanal frei")
         elif a.cmd == "rssi":
             print("%.1f dBm" % m.rssi())
+        elif a.cmd == "fe":
+            _print_dict(m.set_fe({"auto": 0, "an": 1, "aus": 2}[a.lna]) if a.lna else m.fe())
         elif a.cmd == "autorx":
             m.set_autorx(bool(a.on))
             print("gesetzt – mit 'save' dauerhaft speichern")

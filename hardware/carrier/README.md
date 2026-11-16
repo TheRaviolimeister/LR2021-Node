@@ -3,19 +3,20 @@
 A 172 × 106 mm two-layer PCB that replaces the perfboard and the point-to-point wiring. All modules
 stay pluggable: the Orange Pi Zero 2W, both ESP32-S3 DevKitC-1 and both Core2021 modules sit in
 female headers with generous space between them. The four antenna connectors are soldered to the
-board, and the small SMD parts can be assembled by the PCB manufacturer.
+board, and the small SMD parts can be assembled by the PCB manufacturer. The 868 MHz path has a
+1 W front end (power amplifier, low-noise amplifier with bypass) and a socket for a plug-in filter.
 
 ![Top](fabrication/top.png)
 
-> Revision 1.2 has not been manufactured yet. Before ordering, print `fabrication/layout.svg` at
+> Revision 1.3 has not been manufactured yet. Before ordering, print `fabrication/layout.svg` at
 > 100 % and check the header positions against your own modules.
 
 ## Layout
 
 ```
  top edge:                 [868 LoRa]  [2.4G HF]  I2C I2C  [2.4G LF]  [433 LoRa]   I2C I2C I2C
-             USB-C / J1    Core2021-HF                     Core2021-LF
-             power input   (both modules at the same height, mirrored)
+             USB-C / J1  868 PA/LNA  Core2021-HF               Core2021-LF
+             power input  filter      (both modules at the same height, mirrored)
                                     I2C  I2C  I2C  I2C  I2C
              ESP32 A            I2C header                                     ESP32 B
              (USB at the        I2C header  CONSOLE  GPS                       (USB at the
@@ -41,12 +42,16 @@ USB data lines have a fixed fan-out (0.5 mm pin pitch).
   - **RF lines:** each module pin is connected to its connector by a 50 Ω line (grounded
     coplanar waveguide: 1.55 mm track, 0.3 mm gap, solid ground underneath, ground via fence on
     both sides; calculated for the standard 1.6 mm FR4 two-layer stack). No other signal crosses
-    or runs underneath an RF line. Length: 15 mm (433 MHz module, antenna end towards the edge)
-    and 34 mm (868 MHz module, which has to sit antenna end down so that its LoRa connector is the
-    outer one). A matched line of this length does not radiate and loses well below 0.2 dB.
-  - **Filter places:** every RF line has a π network close to the connector: the series 0 Ω
-    resistor is fitted, the two shunt places (0603) stay empty. A low-pass or matching network can
-    be added later (see "RF filters" below).
+    or runs underneath an RF line. The 433 MHz line is 15 mm long; on the 868 MHz side the module
+    feeds the filter socket and the front end, whose output sits 10 mm below its connector. A
+    matched line of this length does not radiate and loses well below 0.2 dB.
+  - **Filter places:** the RF lines have a π network close to the connector: the series 0 Ω
+    resistor is fitted, the shunt places (0603) stay empty. A low-pass or matching network can be
+    added later (see "RF filters" below). On the 868 MHz line the module-side shunt is the fitted
+    2.7 pF capacitor of the front end's antenna low-pass.
+- **868 MHz front end (U8, Skyworks SE2435L):** see the section below – up to +30 dBm (1 W) at the
+  connector, a low-noise amplifier with bypass that the firmware switches by the measured noise
+  floor, and the plug-in filter socket J22.
 - **Ten Qwiic / STEMMA QT sockets plus two 4-pin headers for I²C peripherals** (display, buttons,
   switches, sensors, I/O expanders). All of them are on the same bus: Orange Pi pins 3 (SDA) and
   5 (SCL), 4.7 kΩ pull-ups to 3.3 V. **3.3 V only:** do not connect modules that pull SDA/SCL up
@@ -81,20 +86,63 @@ USB data lines have a fixed fan-out (0.5 mm pin pitch).
   (mount the board before plugging in the ESP32). Orange Pi pin 6 (GND) is not connected on the
   carrier – it is connected to the other GND pins inside the Pi.
 
+## 868 MHz front end
+
+```
+ Core2021-HF ── J22 filter socket ── SE2435L TR ─┬─ LNA (16 dB) / bypass ──┐
+  (LORA_ANT)     (plug-in SAW)                   └─ PA (26 dB, up to 1 W) ─┴─ ANT1 ── low-pass ── SMA 868
+```
+
+- **U8 Skyworks SE2435L** (860–930 MHz front-end module): power amplifier up to +30 dBm, low-noise
+  amplifier (16 dB gain, 2 dB noise figure) with bypass, transmit/receive switch. The output match
+  (L2, C30, C31, L1), the harmonic traps (L7/C32 at the PA output, L9/C33 at the antenna side), the
+  antenna low-pass (L8, L6, C9) and the supply decoupling follow the Skyworks SE2435L-EK5 evaluation
+  board (+30 dBm, 868–930 MHz, ETSI/FCC). The values are a starting point: on a two-layer board the
+  output match may need a small correction for the very last dB – check with a power meter.
+- **Supply:** U9 TLV75901 (1 A LDO) makes 4.68 V for the front end from the 5 V rail, behind a
+  ferrite bead (FB1). At +30 dBm the front end draws about 0.55 A while transmitting; the 5 V
+  source has to deliver this on top of the rest of the node. The exposed pad of U8 has nine vias
+  into the bottom ground plane as a heat sink.
+- **Filter socket J22** (1×5 female header: GND, port 1, GND, port 2, GND): sits between the radio
+  module and the front end. When receiving, the filter is behind the LNA, so its loss costs almost
+  no sensitivity, and strong signals outside the band (e.g. LTE 800 directly below 868 MHz) never
+  reach the LR2021. When transmitting, only the drive level of a few mW passes the filter, so a small
+  SAW filter is enough. The filter module is described in [hardware/filter868](../filter868); for a
+  different band (another radio module, 915 MHz, …) plug in a module with a matching filter.
+  **Without a filter module the 868 MHz path is open:** bridge pin 2 and pin 4 of J22 with a short
+  wire instead.
+- **Control from ESP32 A:** GPIO42 = CSD (front end on), GPIO41 = CPS (LNA on / bypass),
+  GPIO40 = CTX (transmit via the PA), each through 1 kΩ. A 10 kΩ pull-down on CSD keeps the front end
+  switched off while the ESP32 starts; the firmware detects the front end by this pull-down.
+- **Firmware (1.1.0 or newer required):**
+  - The transmit power set by the app is the power at the connector. The firmware converts it into
+    the LR2021 drive level: from 14 dBm upwards the signal goes through the PA, below that through
+    the bypass (up to about 5 dBm).
+  - **The legal limits are enforced in the firmware**, whatever the app asks for: 27 dBm (500 mW ERP)
+    in 869.40–869.65 MHz (Meshtastic EU_868, MeshCore), 14 dBm (25 mW ERP) everywhere else; both
+    assume an antenna gain of up to 2.15 dBi. The hardware alone could do more (+30 dBm).
+  - **LNA automatic (default):** every 5 minutes the firmware measures the noise floor with and
+    without the LNA. If the receiver's own noise limits the sensitivity (quiet site), the LNA stays
+    on; if the noise from outside dominates (city, a transmitter nearby), the LNA would not improve
+    anything and only make the receiver easier to overload – then it switches to bypass. The mode
+    (automatic / on / off) and the measured noise floor are shown in the app (Radio → Modem).
+- **Never flash firmware older than 1.1.0 onto ESP32 A on this board.** Older firmware does not
+  know the front end and could drive its input (max. +10 dBm) with up to +22 dBm.
+
 ## RF filters
 
-There is deliberately no filter fitted on the board:
-
-- **868 MHz and 433 MHz:** the SMD filters that can be assembled (SAW filters) are made for a single
-  channel (e.g. 868.3 MHz, too narrow for Meshtastic at 869.525 MHz), lose about 3 dB in both
-  directions and are not rated for the 22 dBm transmit power. Against strong signals next to the band
-  (e.g. LTE 800 below 868 MHz) the right part is an **external cavity filter** screwed onto the SMA
-  connector (typically < 1 dB loss, > 40 dB rejection).
-- **2.4 GHz:** an LTCC band-pass filter (e.g. Murata LFB182G45SG9B740, 0.7 dB, 500 mW) would fit, but
-  it passes 2400–2500 MHz only and would cut off the 13 cm amateur band below 2400 MHz.
+- **868 MHz:** plug-in SAW filter (J22, see above); the front end itself has a low-pass with two
+  harmonic traps at its output. An external cavity filter on the SMA connector is still possible
+  (needs to be rated for 1 W).
+- **433 MHz:** no filter fitted. The SMD filters that can be assembled are made for a single channel
+  and are not rated for the transmit power; against strong signals next to the band use an external
+  cavity filter on the SMA connector.
+- **2.4 GHz:** no filter. An LTCC band-pass filter (e.g. Murata LFB182G45SG9B740, 0.7 dB, 500 mW)
+  would fit, but it passes 2400–2500 MHz only and would cut off the 13 cm amateur band below
+  2400 MHz.
 - The π networks allow a low-pass filter for transmitter harmonics if a measurement ever shows the
-  need (3rd order Butterworth, 50 Ω: 868 MHz: 3.3 pF – 15 nH – 3.3 pF, 433 MHz: 5.6 pF – 27 nH –
-  5.6 pF; C0G capacitors, high-Q wire-wound inductors).
+  need (3rd order Butterworth, 50 Ω: 433 MHz: 5.6 pF – 27 nH – 5.6 pF; C0G capacitors, high-Q
+  wire-wound inductors).
 
 ## Checks of the design
 
@@ -102,8 +150,12 @@ There is deliberately no filter fitted on the board:
 
 - every connection against the pin names of the modules and parts (ESP32-S3-DevKitC-1, Core2021,
   Orange Pi Zero 2W header from the vendor's pin table, firmware pin numbers, CH340C, USBLC6-2SC6,
-  USB-C receptacle, MOSFETs, diodes – all taken from the data sheets);
-- no net with only one connection, no short, all nets connected, minimum distance between parts;
+  USB-C receptacle, MOSFETs, diodes, SE2435L, TLV75901 – all taken from the data sheets), including
+  the complete topology of the front end (match, traps, low-pass, supply feeds, control lines) and
+  its supply voltage (4.68 V, recommended 4.0–4.8 V);
+- no net with only one connection, no short, all nets connected, minimum distance between parts
+  (0.25 mm between the outlines; small passives and the front-end chips may touch outlines, which
+  still leaves at least 0.5 mm between the bodies);
 - RF lines: 48.5–51.9 Ω for the JLCPCB 1.6 mm stack-up (εr 4.2–4.8), ground plane continuous under
   and beside the lines (gaps only at the connector and module pins), via fence ≤ λ/40, no other
   track closer than 2.4 mm;
@@ -124,8 +176,9 @@ not, bridge R2/R3 with a 0402 0 Ω resistor or a solder bridge. Leave the IPEX s
 2. For assembly: enable "PCB Assembly", top side, upload `fabrication/bom.csv` and
    `fabrication/cpl.csv`. The SMA connectors are through-hole parts – choose the option that
    includes through-hole assembly, or solder them yourself. Check the parts preview: diodes
-   (D1–D4), transistors (Q1–Q6), the Qwiic sockets and the SMA connectors must match the marks on
-   the board; correct the rotation there if needed.
+   (D1–D4), transistors (Q1–Q6), the front end U8 and its LDO U9 (pin 1 mark), U6/U7, the Qwiic
+   sockets and the SMA connectors must match the marks on the board; correct the rotation there if
+   needed.
 3. The remaining through-hole parts are soldered by hand, see `fabrication/hand-solder.csv`.
 
 ## Assembly
@@ -141,6 +194,7 @@ not, bridge R2/R3 with a 0402 0 Ω resistor or a solder bridge. Leave the IPEX s
 | J2 | JST-XH 5-pin | GPS: 3V3, GND, TX, RX, PPS – labels = pins of the GPS module (GPS TX to “TX”) |
 | J3 | pin header 1×3 | console adapter (optional, e.g. CP2102): GND, RXD, TXD – labels = pins of the adapter (adapter RXD to “RXD”); no supply pin |
 | J21 | USB-C (assembled) | USB console, see above |
+| J22 | female header 1×5 | 868 MHz filter module ([hardware/filter868](../filter868)); without a module bridge pin 2 and pin 4 |
 | J4, J12 | pin header 1×4 | I²C: GND, VCC (3.3 V), SCL, SDA |
 | J6–J11, J17–J20 | JST SH 4-pin (Qwiic) | I²C: GND, 3.3 V, SDA, SCL (assembled) |
 
@@ -164,7 +218,8 @@ opposite assignment). This keeps every connection on its own side of the board. 
 identifies the two modems by their role (GET_INFO), so nothing has to be configured.
 
 ESP32 ↔ LR2021 as in [assembly.md](../../docs/hardware/assembly.md), plus DIO7 → GPIO8 and
-DIO8 → GPIO9.
+DIO8 → GPIO9. ESP32 A also controls the 868 MHz front end: GPIO42 = CSD, GPIO41 = CPS,
+GPIO40 = CTX.
 
 ## Files
 
@@ -177,6 +232,7 @@ DIO8 → GPIO9.
 | `lr2021-carrier.kicad_pcb` | the KiCad 9 board – can be opened and edited in KiCad |
 | `netlist.json` | all connections |
 | `fabrication/` | files for ordering and pictures |
+| `../filter868/` | the plug-in 868 MHz filter module (own small board) |
 
 Rebuild (Linux or WSL with KiCad 9, `python3-numpy`, `python3-scipy`, `gcc`):
 

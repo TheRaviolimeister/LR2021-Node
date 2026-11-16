@@ -23,7 +23,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, "lr2021-carrier.kicad_pcb")
 LIB = "/usr/share/kicad/footprints"
 
-VERSION = "1.2"
+VERSION = "1.3"
 BOARD_W, BOARD_H = 172.0, 106.0
 
 MM = pcbnew.FromMM
@@ -36,7 +36,7 @@ def V(x, y):
 board = pcbnew.BOARD()
 board.SetCopperLayerCount(2)
 ds = board.GetDesignSettings()
-ds.m_TrackMinWidth = MM(0.2)
+ds.m_TrackMinWidth = MM(0.127)   # 0.127 mm only for two control lines under C35
 ds.m_ViasMinSize = MM(0.6)
 ds.m_MinThroughDrill = MM(0.3)
 ds.m_CopperEdgeClearance = MM(0.4)
@@ -318,8 +318,8 @@ hf_bot = CY_HF + 8.89
 lf_top = CY_LF - 8.89
 RF_LINES = {
     # name: (points, side of the shunt parts)
-    "RF_HF_LORA": ([(CX_HF - 7.62, hf_bot), (CX_HF - 10.12, hf_bot), (CX_HF - 11.62, hf_bot - 1.5),
-                    (CX_HF - 11.62, SMA_Y)], -1),
+    # 868 MHz: from the antenna output of the front end (U8, below) to the SMA
+    "RF_HF_LORA": ([(CX_HF - 11.62, 15.0 - 0.537), (CX_HF - 11.62, SMA_Y)], +1),
     "RF_HF_24": ([(CX_HF + 7.62, hf_bot), (CX_HF + 10.12, hf_bot), (CX_HF + 11.62, hf_bot - 1.5),
                   (CX_HF + 11.62, SMA_Y)], +1),
     "RF_LF_24": ([(CX_LF - 7.62, lf_top), (CX_LF - 7.62, lf_top - 0.3), (CX_LF - 11.62, lf_top - 4.3),
@@ -330,8 +330,9 @@ RF_LINES = {
 PI_PARTS = {}   # line name -> (series ref, shunt module side ref, shunt sma side ref)
 rser, csh = 21, 9
 for name, (pts, side) in RF_LINES.items():
+    top_need = PI_SER + 1.3 if name == "RF_HF_LORA" else PI_SH_MOD + 0.6
     xs = [a[0] for a, b in zip(pts, pts[1:]) if abs(a[0] - b[0]) < 1e-6 and min(a[1], b[1]) <= PI_SH_SMA - 0.6
-          and max(a[1], b[1]) >= PI_SH_MOD + 0.6]
+          and max(a[1], b[1]) >= top_need]
     assert xs, name
     x = xs[0]
     rs, c1, c2 = f"R{rser}", f"C{csh}", f"C{csh + 1}"
@@ -341,6 +342,83 @@ for name, (pts, side) in RF_LINES.items():
     PI_PARTS[name] = (rs, c1, c2)
     rser += 1
     csh += 2
+
+
+# ---- 868 MHz front end: Skyworks SE2435L (1 W PA, LNA with bypass, T/R switch) ----
+# Sits between the Core2021-HF and the 868 MHz SMA. Output match, supply decoupling and harmonic
+# filter follow the Skyworks SE2435L-EK5 evaluation board (+30 dBm, 868-930 MHz, ETSI/FCC).
+# The plug-in filter (J22, 1x5 socket: GND, IN, GND, OUT, GND) sits between the radio module and the
+# front end: behind the LNA when receiving (strong signals outside the band never reach the LR2021,
+# the filter loss costs almost no sensitivity there) and in front of the PA when transmitting (drive
+# level only, a few mW). Without a filter module, a short wire from pin 2 to pin 4 replaces it.
+# ESP32 A controls the front end: GPIO42 = CSD (on), GPIO41 = CPS (LNA), GPIO40 = CTX (transmit).
+# The 10k pull-down on CSD keeps it off (sleep) while the ESP32 starts; the firmware also uses it to
+# detect the front end (the pin reads low with its internal pull-up).
+FX, FY = CX_HF - 18.5, 15.0        # centre of U8; its antenna output lines up with the SMA (u = 6.88)
+C0402 = ("Capacitor_SMD", "C_0402_1005Metric")
+L0402 = ("Inductor_SMD", "L_0402_1005Metric")
+L0603 = ("Inductor_SMD", "L_0603_1608Metric")
+R0402 = ("Resistor_SMD", "R_0402_1005Metric")
+
+
+def fe(ref, value, lib, u, v, rot=0, lcsc="", assemble=True):
+    return smd(ref, value, lib, FX + u, FY + v, rot, lcsc, assemble)
+
+
+fe("U8", "SE2435L-R", ("Package_DFN_QFN", "QFN-24-1EP_4x4mm_P0.5mm_EP2.7x2.7mm"), 0, 0, 0, "C4748685")
+# Layout: PA output and supplies above the chip, antenna side to the right (straight up to the SMA),
+# control lines and the TR port to the left, receive filter loop below. Parts keep their courtyards.
+# PA output match (L2, C30, C31, L1) and harmonic trap at TX_IN (L7, C32)
+fe("L2", "1.2nH", L0603, 2.75, -3.5, 0, "C882496")
+fe("C30", "10pF", C0402, 3.537, -5.5, 90, "C85874")
+fe("C31", "5pF", C0402, 4.65, -5.5, 90, "C1573")
+fe("L1", "6.8nH", L0402, 3.6, -1.6, 90, "C84403")
+fe("L7", "1.0nH", L0402, 5.1, -0.15, 0, "C97981")
+fe("C32", "3.9pF", C0402, 5.45, -1.7, 90, "C76907")
+# antenna side: low-pass with 2nd-harmonic trap (L8, L9 + C33, L6, C9 = shunt of the pi network)
+fe("L8", "5.6nH", L0603, 4.3, 1.15, 0, "C441735")
+fe("L9", "1.5nH", L0402, 5.087, 2.95, 90, "C113053")
+fe("C33", "3.3pF", C0402, 5.087, 4.95, 90, "C76906")
+fe("L6", "8.2nH", L0603, 6.88, 0.25, 90, "C98009")
+# supply feeds: VCC2 (PA output stage) via L5, VCC0 via L3, VCC1 via L4, decoupled as on the EK5
+fe("L5", "6.8nH", L0603, 0.4, -4.4, 90, "C882493")
+fe("L3", "39nH", L0402, -0.9, -3.75, 90, "C113055")
+fe("C26", "22pF", C0402, -2.1, -3.75, 90, "C1555")
+fe("C27", "100pF", C0402, -3.4, -3.45, 90, "C1546")
+fe("C28", "47pF", C0402, -4.5, -3.45, 90, "C1567")
+fe("L4", "39nH", L0402, -5.6, -3.45, 90, "C113055")
+fe("C22", "4.7uF", C0603, -2.15, -7.5, 90, "C19666")
+fe("C23", "10nF", C0402, -0.85, -7.2, 90, "C15195")
+fe("C25", "100pF", C0402, 0.2, -7.2, 90, "C1546")
+fe("C24", "1nF", C0402, 1.25, -7.2, 90, "C1523")
+# PA input coupling (TX_FLT -> PA_IN); CPS and CTX pass underneath it
+fe("C35", "3.3pF", ("Capacitor_SMD", "C_0805_2012Metric"), -3.75, 0.0, 90, "C1811")
+# receive filter loop of the SE2435L: bridged (the filter sits at J22 instead)
+fe("R33", "0R", R0402, 0.25, 3.25, 0, "C17168")
+# control lines from ESP32 A (1k series), pull-down on CSD
+fe("R34", "1k", R0402, -6.8, -1.85, 0, "C11702")
+fe("R35", "1k", R0402, -6.8, -0.75, 0, "C11702")
+fe("R36", "1k", R0402, -6.8, 0.75, 0, "C11702")
+fe("R37", "10k", R0402, -7.31, -3.5, 90, "C25744")
+# 4.7 V supply of the front end (TLV75901, 1 A LDO) from the 5 V rail through a ferrite bead
+LDO_X, LDO_Y = FX - 8.0, 5.0
+smd("U9", "TLV75901", ("Package_SON", "WSON-6-1EP_2x2mm_P0.65mm_EP1x1.6mm"), LDO_X, LDO_Y, 180, "C544759")
+smd("R31", "75k", R0603, LDO_X + 2.6, 6.3, 90, "C23242")      # OUT -> FB: 0.55 V x (1 + 75/10) = 4.68 V
+smd("R32", "10k", R0603, LDO_X + 4.2, 5.6, -90, "C25804")
+smd("C20", "10uF", C0603, LDO_X - 2.4, 4.8, 90, "C19702")
+smd("C21", "10uF", C0603, LDO_X + 0.2, 8.0, 0, "C19702")
+smd("FB1", "BLM18PG221", ("Inductor_SMD", "L_0603_1608Metric"), LDO_X - 2.4, 7.9, 90, "C80165")
+# plug-in filter socket: pin 2 = towards the front end, pin 4 = towards the radio module
+J22_X, J22_Y = FX - 2.45 - 2.54, 25.0
+place(lib_fp("J22", "868 filter", "Connector_PinSocket_2.54mm", "PinSocket_1x05_P2.54mm_Vertical"),
+      J22_X, J22_Y, 90, "1x5 socket 2.54", "", assemble=False)
+FE_REFS = ["U8", "U9", "L1", "L2", "L3", "L4", "L5", "L6", "L7", "L8", "L9", "FB1"] + \
+          [r for r in ["C%d" % k for k in range(20, 36)] + ["R%d" % k for k in range(31, 38)] if r in parts]
+# 868 MHz pi network: C9 is the fitted shunt of the antenna low-pass (C13 2.7 pF on the EK5), next to L6
+_c9 = parts["C9"][0]
+board.Remove(_c9)
+del parts["C9"]
+fe("C9", "2.7pF", C0402, 8.7, -1.6, 0, "C76904")
 
 # ---- power input (top left): USB-C (power only) or JST-XH from the battery shield ----
 j5 = place(lib_fp("J5", "USB-C power", "Connector_USB", "USB_C_Receptacle_GCT_USB4125-xx-x_6P_TopMnt_Horizontal"),
@@ -438,7 +516,7 @@ for ref, x, y, r in QWIIC:
 QWIIC_REFS = [q[0] for q in QWIIC]
 
 # references of the pi-network parts stay off the silkscreen (no room between the RF lines)
-for _r in [x for t in PI_PARTS.values() for x in t]:
+for _r in [x for t in PI_PARTS.values() for x in t] + FE_REFS:
     parts[_r][0].Reference().SetVisible(False)
 
 # reference texts placed next to their parts where the default position collides
@@ -478,7 +556,7 @@ mount_hole("H4", BOARD_W - X_DKA - 20.0, BOARD_H - 3.0)
 NETS = {
     "VIN": ["J1.1", "J5.A9", "J5.B9", "Q1.3", "Q2.3"],
     "VIN_P": ["Q1.2", "Q2.2", "F1.1"],
-    "+5V": ["F1.2", "D1.1", "C1.1", "C2.1", "C17.1", "U5.2", "U5.4", "D2.2", "D3.2", "R4.1"],
+    "+5V": ["F1.2", "D1.1", "C1.1", "C2.1", "C17.1", "U5.2", "U5.4", "D2.2", "D3.2", "R4.1", "FB1.1"],
     "PFET_G": ["Q1.1", "Q2.1", "R3.1"],
     "CC1": ["J5.A5", "R1.1"],
     "CC2": ["J5.B5", "R2.1"],
@@ -518,6 +596,19 @@ NETS = {
     "MISO_A": ["U1.7", "U3.14"], "NRST_A": ["U1.6", "U3.15"], "BUSY_A": ["U1.5", "U3.16"],
     "IRQ_A": ["U1.4", "U3.3"], "DIO7_A": ["U1.12", "U3.5"], "DIO8_A": ["U1.15", "U3.4"],
     # ESP32 B <-> Core2021-LF
+    # 868 MHz front end (U8 SE2435L) and its supply (U9)
+    "PA_VIN": ["FB1.2", "C20.1", "U9.6", "U9.4"],
+    "PA_VCC": ["U9.1", "R31.1", "C21.2", "L5.2", "L3.2", "L4.2", "C22.1", "C23.1", "C24.1", "C25.1"],
+    "PA_FB": ["U9.2", "R31.2", "R32.1"],
+    "FE_VCC2": ["U8.21", "L5.1"], "FE_VCC0": ["U8.23", "L3.1", "C26.1"],
+    "FE_VCC1": ["U8.24", "L4.1", "C27.1", "C28.1"],
+    "FE_PAOUT": ["U8.20", "L2.1"], "FE_N1": ["L2.2", "L1.2", "C30.1", "C31.1"],
+    "FE_TXIN": ["U8.16", "L1.1", "L7.1"], "FE_TRAP1": ["L7.2", "C32.1"],
+    "FE_ANT1": ["U8.14", "L8.1"], "FE_N3": ["L8.2", "L9.2", "L6.1"], "FE_TRAP2": ["L9.1", "C33.2"],
+    "FE_PAIN": ["U8.2", "C35.2"], "FE_TXFLT": ["U8.5", "C35.1"],
+    "FE_LNAIN": ["U8.9", "R33.1"], "FE_RXFLT": ["U8.11", "R33.2"],
+    "FE_CSD": ["U8.1", "R34.2"], "FE_CPS": ["U8.3", "R35.2"], "FE_CTX": ["U8.4", "R36.2"],
+    "CSD_A": ["R34.1", "R37.1", "U1.28"], "CPS_A": ["R35.1", "U1.29"], "CTX_A": ["R36.1", "U1.30"],
     "CS_B": ["U2.11", "U4.11"], "SCK_B": ["U2.10", "U4.12"], "MOSI_B": ["U2.9", "U4.13"],
     "MISO_B": ["U2.6", "U4.14"], "NRST_B": ["U2.7", "U4.15"], "BUSY_B": ["U2.8", "U4.16"],
     "IRQ_B": ["U2.16", "U4.3"], "DIO7_B": ["U2.12", "U4.5"], "DIO8_B": ["U2.15", "U4.4"],
@@ -527,7 +618,10 @@ NETS = {
             "U5.9", "U5.14", "U5.20", "U5.25", "U5.30", "U5.34", "U5.39",
             "U1.22", "U1.23", "U1.43", "U1.44", "U2.22", "U2.23", "U2.43", "U2.44",
             "U3.2", "U3.7", "U3.10", "U4.2", "U4.7", "U4.10", "J2.2", "J3.1", "J4.1", "J12.1",
-            "U6.1", "C18.2", "C19.2", "R25.1", "R26.1", "U7.2", "J21.A1", "J21.A12", "J21.B1", "J21.B12", "J21.S1"]
+            "U6.1", "C18.2", "C19.2", "R25.1", "R26.1", "U7.2", "J21.A1", "J21.A12", "J21.B1", "J21.B12", "J21.S1",
+            "U8.7", "U8.8", "U8.13", "U8.15", "U8.17", "U8.18", "U8.25", "U9.3", "U9.7", "R32.2", "R37.2",
+            "C20.2", "C21.1", "C22.2", "C23.2", "C24.2", "C25.2", "C26.2", "C27.2", "C28.2", "C30.2", "C31.2",
+            "C32.2", "C33.1", "J22.1", "J22.3", "J22.5"]
            + [r + ".1" for r in QWIIC_REFS] + [r + ".MP" for r in QWIIC_REFS]
            + [r + ".2" for r in ANT],
 }
@@ -537,6 +631,10 @@ RF_PIN = {"RF_HF_LORA": ("U3.9", "J13"), "RF_HF_24": ("U3.1", "J14"),
 for name, (modpin, sma) in RF_PIN.items():
     rs, c1, c2 = PI_PARTS[name]
     NETS[name + "_M"] = [modpin, c1 + ".1", rs + ".1"]
+    if name == "RF_HF_LORA":                 # 868 MHz: the pi network sits behind the front end
+        NETS[name + "_M"] = ["L6.2", c1 + ".1", rs + ".1"]
+        NETS[name + "_T"] = ["U8.6", "J22.2"]          # front end TR port <-> filter socket
+        NETS[name + "_R"] = [modpin, "J22.4"]          # filter socket <-> radio module
     NETS[name + "_S"] = [rs + ".2", c2 + ".1", sma + ".1"]
     NETS["GND"] += [c1 + ".2", c2 + ".2"]
 RF_NETS = [n for n in NETS if n.startswith("RF_")]
@@ -568,6 +666,8 @@ for _k, _n in enumerate(A_LANES):
         (xk + 0.1, yk + 0.1, CX_HF - 6.0, pk - 0.9),   # right of / below its lane, above its pin
         (xk + 0.1, pk + 0.9, X_DKA + 1.0, 80.0),       # right of its lane, below its pin
     ]
+for _n in ("CSD_A", "CPS_A", "CTX_A"):
+    KEEPOUT[_n] = [(FX - 3.9, 0.0, BOARD_W, 38.6)]
 for _n in ("EN_A", "IRQ_A", "DIO7_A", "DIO8_A", "+3V3_A"):
     KEEPOUT[_n] = _A_EAST
 # ESP32 B: MISO/RST/BUSY reach the LoRa pin row from outside, MOSI/SCK/CS pass below it and reach it
@@ -870,6 +970,13 @@ def pt_seg(px, py, a, b):
 
 rf_tracks, rf_vias = [], []
 gid_rf = net_ids["GND"]
+# 868 MHz: radio module -> filter socket pin 4, filter socket pin 2 -> front end (TR)
+RF_EXTRA = {
+    "RF_HF_LORA_R": [(CX_HF - 7.62, hf_bot), (J22_X + 7.62 + 3.0, hf_bot), (J22_X + 7.62, hf_bot - 3.0),
+                     (J22_X + 7.62, J22_Y)],
+    "RF_HF_LORA_T": [(J22_X + 2.54, J22_Y), (J22_X + 2.54, FY + 3.4)],
+}
+ALL_RF = [pp for (pp, _s) in RF_LINES.values()] + list(RF_EXTRA.values())
 keep = RF_W / 2 + RF_GAP + 0.75          # nothing but ground within this distance of the line centre
 fence_off = RF_W / 2 + RF_GAP + 0.45     # via fence: centre distance from the line centre
 for name, (pts, side) in RF_LINES.items():
@@ -911,7 +1018,39 @@ for name, (pts, side) in RF_LINES.items():
                     continue
                 # keep away from every other RF line
                 if any(pt_seg(vx, vy, p, q) < RF_W / 2 + RF_GAP + 0.3
-                       for (pp, _s) in RF_LINES.values() for (p, q) in zip(pp, pp[1:])):
+                       for pp in ALL_RF for (p, q) in zip(pp, pp[1:])):
+                    continue
+                rf_vias.append((gid_rf, (vx, vy), 0.6, 0.3))
+                viamask[(XS - vx) ** 2 + (YS - vy) ** 2 <= 1.0 ** 2] = True
+                for L in (F, B):
+                    occ[L][near & (occ[L] <= 0)] = gid_rf
+for name, pts in RF_EXTRA.items():
+    nid = net_ids[name]
+    for (p, q) in zip(pts, pts[1:]):
+        rf_tracks.append((nid, RF_W, F, p, q))
+        band = seg_mask(p, q, keep)
+        for L in (F, B):
+            occ[L][band & (occ[L] == 0)] = -1
+        core = seg_mask(p, q, RF_W / 2 + 0.065)
+        occ[F][core & (occ[F] <= 0)] = nid
+    for (a, b) in zip(pts, pts[1:]):
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        ln = math.hypot(dx, dy)
+        nx_, ny_ = -dy / ln, dx / ln
+        n_steps = int(ln / 1.8)
+        for k in range(n_steps + 1):
+            t = k / max(n_steps, 1)
+            cx, cy = a[0] + dx * t, a[1] + dy * t
+            for sgn in (-1, 1):
+                vx, vy = cx + sgn * nx_ * fence_off, cy + sgn * ny_ * fence_off
+                i, j = int(round(vx / G)), int(round(vy / G))
+                if not (0 < i < NX - 1 and 0 < j < NY - 1):
+                    continue
+                near = (XS - vx) ** 2 + (YS - vy) ** 2 <= (0.3 + 0.2) ** 2
+                if (padmask & near).any() or viamask[j, i] or emask[j, i]:
+                    continue
+                if any(pt_seg(vx, vy, p, q) < RF_W / 2 + RF_GAP + 0.3
+                       for pp in ALL_RF for (p, q) in zip(pp, pp[1:])):
                     continue
                 rf_vias.append((gid_rf, (vx, vy), 0.6, 0.3))
                 viamask[(XS - vx) ** 2 + (YS - vy) ** 2 <= 1.0 ** 2] = True
@@ -956,7 +1095,69 @@ FIXED = {   # net: [(layer, width, [points...]) ...], vias as ("via", (x, y))
                ("via", (U7_X, U7_Y)), (F, 0.2, [(U7_X, U7_Y), _p5])],
     "GND": [(F, 0.3, [_p2, (_p2[0] - 1.06, _p2[1])]), ("via", (_p2[0] - 1.06, _p2[1]))],
 }
-FIXED_NETS = [n for n in FIXED if n != "GND"]
+
+# ---- 868 MHz front end: all connections drawn (short, as on the evaluation board) ----
+def PP(ref, num):
+    """Board position of a pad."""
+    for p in fps[ref].Pads():
+        if p.GetNumber() == str(num):
+            c = p.GetPosition()
+            return (pcbnew.ToMM(c.x), pcbnew.ToMM(c.y))
+    raise KeyError(ref + "." + str(num))
+
+
+def U(u, v):
+    return (FX + u, FY + v)
+
+
+_bus_y = -6.0
+FIXED.update({
+    "FE_PAOUT": [(F, 0.3, [PP("U8", 20), U(0.75, -2.85), U(1.963, -2.85), PP("L2", 1)])],
+    "FE_VCC2": [(F, 0.3, [PP("U8", 21), U(0.25, -3.6)])],
+    "FE_N1": [(F, 0.3, [PP("L1", 2), U(3.6, -3.2)]), (F, 0.3, [PP("L2", 2), PP("C30", 1), PP("C31", 1)])],
+    "FE_TXIN": [(F, 0.25, [PP("U8", 16), U(3.6, -0.25), PP("L1", 1)]), (F, 0.25, [U(3.6, -0.25), PP("L7", 1)])],
+    "FE_TRAP1": [(F, 0.25, [PP("L7", 2), PP("C32", 1)])],
+    "FE_ANT1": [(F, 0.25, [PP("U8", 14), U(2.7, 0.75), U(3.1, 1.15), PP("L8", 1)])],
+    "FE_N3": [(F, 0.4, [PP("L8", 2), PP("L6", 1)]), (F, 0.3, [PP("L8", 2), PP("L9", 2)])],
+    "FE_TRAP2": [(F, 0.3, [PP("L9", 1), PP("C33", 2)])],
+    "FE_VCC0": [(F, 0.25, [PP("U8", 23), U(-0.75, -2.6), U(-0.9, -2.75), PP("L3", 1)]),
+                (F, 0.25, [U(-0.9, -3.0), U(-2.1, -3.0), PP("C26", 1)])],
+    "FE_VCC1": [(F, 0.2, [PP("U8", 24), U(-1.25, -2.5), U(-5.6, -2.5), PP("L4", 1)]),
+                (F, 0.2, [U(-3.4, -2.5), PP("C27", 1)]), (F, 0.2, [U(-4.5, -2.5), PP("C28", 1)])],
+    "PA_VCC": [(F, 0.5, [PP("L4", 2), U(-5.6, _bus_y)]), (F, 0.5, [U(-6.4, _bus_y), U(1.25, _bus_y)]),
+               (F, 0.4, [PP("L3", 2), U(-0.9, _bus_y)]), (F, 0.4, [PP("L5", 2), U(0.4, _bus_y)]),
+               (F, 0.3, [PP("C22", 1), U(-2.15, _bus_y)]), (F, 0.3, [PP("C23", 1), U(-0.85, _bus_y)]),
+               (F, 0.3, [PP("C24", 1), U(1.25, _bus_y)]), (F, 0.3, [PP("C25", 1), U(0.2, _bus_y)]),
+               (F, 0.4, [(LDO_X + 0.95, PP("U9", 1)[1]), (FX - 6.4, PP("U9", 1)[1]), U(-6.4, _bus_y)]),
+               (F, 0.4, [PP("R31", 1), (FX - 6.4, PP("R31", 1)[1])]),
+               (F, 0.4, [PP("C21", 2), (FX - 6.4, PP("C21", 2)[1])])],
+    "PA_FB": [(F, 0.2, [PP("U9", 2), (PP("R31", 2)[0], PP("U9", 2)[1]), PP("R31", 2)]),
+              (F, 0.2, [(PP("R31", 2)[0], PP("U9", 2)[1]), (PP("R32", 1)[0], PP("U9", 2)[1]), PP("R32", 1)])],
+    "PA_VIN": [(F, 0.3, [PP("U9", 6), (LDO_X - 1.45, PP("U9", 6)[1]), (LDO_X - 1.45, PP("U9", 4)[1]), PP("U9", 4)]),
+               (F, 0.4, [(LDO_X - 1.45, PP("U9", 6)[1]), PP("C20", 1), PP("FB1", 2)])],
+    "FE_PAIN": [(F, 0.25, [PP("U8", 2), U(-3.2, -0.75)])],
+    "FE_TXFLT": [(F, 0.25, [PP("U8", 5), U(-3.2, 0.75)])],
+    "FE_CPS": [(F, 0.127, [PP("U8", 3), U(-2.45, -0.25), U(-2.5, -0.2), U(-4.95, -0.2), U(-5.5, -0.75),
+                           PP("R35", 2)])],
+    "FE_CTX": [(F, 0.127, [PP("U8", 4), U(-2.45, 0.25), U(-2.5, 0.2), U(-4.95, 0.2), U(-5.5, 0.75),
+                           PP("R36", 2)])],
+    "FE_CSD": [(F, 0.2, [PP("U8", 1), U(-2.45, -1.25), U(-2.45, -1.85), PP("R34", 2)])],
+    "FE_LNAIN": [(F, 0.25, [PP("U8", 9), U(-0.25, 3.25)])],
+    "FE_RXFLT": [(F, 0.25, [PP("U8", 11), U(0.75, 3.25)])],
+    "RF_HF_LORA_T": [(F, 0.25, [PP("U8", 6), U(-2.45, 1.25), U(-2.45, 2.6)]),
+                     (F, 0.6, [U(-2.45, 2.6), U(-2.45, 3.4)])],
+    "RF_HF_LORA_M": [(F, 0.4, [U(6.6, -1.6), PP("C9", 1)])],
+})
+FIXED["GND"] += [(F, 0.25, [PP("U8", n), U(1.0, PP("U8", n)[1] - FY)]) for n in (13, 15, 17, 18)]
+FIXED["GND"] += [(F, 0.25, [PP("U8", 8), U(-0.75, 1.0)]), (F, 0.2, [PP("U8", 7), U(-1.25, 2.25), U(-0.75, 2.25)]),
+                 (F, 0.3, [PP("U9", 3), (LDO_X, PP("U9", 3)[1])])]
+FIXED["GND"] += [("via", U(i * 0.85, j * 0.85)) for i in (-1, 0, 1) for j in (-1, 0, 1)]     # PA heat to the bottom
+FIXED["GND"] += [("via", (LDO_X, LDO_Y - 0.4)), ("via", (LDO_X, LDO_Y + 0.4))]
+FIXED["CSD_A"] = [(F, 0.2, [PP("R34", 1), PP("R37", 1)])]
+FIXED["GND"] += [(F, 0.3, [PP("C9", 2), (PP("C9", 2)[0] + 0.9, PP("C9", 2)[1])]),
+                 ("via", (PP("C9", 2)[0] + 0.9, PP("C9", 2)[1])),
+                 (F, 0.3, [PP("C32", 2), U(5.45, -3.0)]), ("via", U(5.45, -3.0))]
+FIXED_NETS = [n for n in FIXED if n not in ("GND", "CSD_A")]
 for name, items in FIXED.items():
     nid = net_ids[name]
     for it in items:
@@ -982,7 +1183,7 @@ for fp_ in board.GetFootprints():
     for p in fp_.Pads():
         if p.GetNetname() != "GND" or p.GetAttribute() != pcbnew.PAD_ATTRIB_SMD:
             continue
-        if fp_.GetReference() == "U7":          # has its via in the fixed fan-out
+        if fp_.GetReference() in ("U7", "U8", "U9"):   # ground pins tied to the exposed pad (with vias)
             continue
         c = p.GetPosition()
         px, py = pcbnew.ToMM(c.x), pcbnew.ToMM(c.y)
@@ -1164,7 +1365,12 @@ board_text("only ONE source at a time", 22.0, 40.1, 0.8)
 # antenna connectors
 for ref, (x, label) in ANT.items():
     pts, side = RF_LINES[{"J13": "RF_HF_LORA", "J14": "RF_HF_24", "J15": "RF_LF_24", "J16": "RF_LF_LORA"}[ref]]
+    if ref == "J13":
+        board_text("ANT " + label, x + 4.0, 12.8, 0.8, angle=90)
+        continue
     board_text("ANT " + label, x + side * 4.2, 21.0, 0.8, angle=90)
+board_text("868 PA/LNA", FX + 2.0, FY + 6.6, 0.8)
+board_text("FILTER", J22_X + 4.4, J22_Y + 2.4, 0.8)
 # connector pin labels (= pin names of the device that plugs in)
 def pin_labels(names, x0, dx, y):
     for k, txt in enumerate(names):

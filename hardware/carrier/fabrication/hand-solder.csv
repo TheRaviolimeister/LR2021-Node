@@ -3,6 +3,7 @@ Qty,Designator,Part,Footprint,LCSC Part #
 1,J2,JST-XH 5p,JST_XH_B5B-XH-A_1x05_P2.50mm_Vertical,C157991
 1,J3,1x3 2.54,PinHeader_1x03_P2.54mm_Vertical,
 2,"J4,J12",1x4 2.54,PinHeader_1x04_P2.54mm_Vertical,
+1,J22,"female header 1x5, 2.54 mm (868 MHz filter module, see hardware/filter868)",PinSocket_1x05_P2.54mm_Vertical,
 2,"U1,U2","2x female header 1x22, 2.54 mm",ESP32-S3-DevKitC-1_Socket,
 1,U3,"2x female header 1x8, 2.54 mm",Core2021_Socket,
 1,U4,"2x female header 1x8, 2.54 mm",Core2021_Socket,

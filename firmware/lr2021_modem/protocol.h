@@ -29,6 +29,8 @@ enum : uint8_t {
   CMD_SAVE          = 0x13,  // aktuelle Einstellungen als Startwerte speichern
   CMD_FACTORY       = 0x14,  // gespeicherte Werte löschen, Neustart
   CMD_SET_AUTORX    = 0x15,  // u8: nach dem Start sofort empfangen
+  CMD_FE_GET        = 0x16,  // -> FeInfo (868-MHz-Frontend)
+  CMD_FE_SET        = 0x17,  // u8 lna_mode (0 automatisch, 1 an, 2 aus), u8 speichern -> FeInfo
   CMD_TX            = 0x20,  // u8 flags, u16 tx_id, daten  (flags bit0 = vorher Kanal prüfen / LBT)
   CMD_RX_START      = 0x21,  // dauerhaft empfangen
   CMD_STANDBY       = 0x22,
@@ -117,6 +119,18 @@ struct InfoBlock {
   int16_t  temp_c10;       // Chiptemperatur * 10
   uint16_t vbat_mv;        // Versorgung am LR2021
   uint32_t subghz_min_hz, subghz_max_hz;
+};
+struct FeInfo {
+  uint8_t  present;        // 1 = Frontend erkannt
+  uint8_t  lna_mode;       // 0 automatisch, 1 an, 2 aus
+  uint8_t  lna_on;         // LNA gerade an
+  uint8_t  pa;             // aktuelle Sendeleistung läuft über den PA
+  int16_t  noise_on10;     // letzter Rauschboden an der Antenne *10 (dBm), mit LNA (0 = noch nicht gemessen)
+  int16_t  noise_off10;    // dasselbe ohne LNA
+  int8_t   out_dbm;        // tatsächliche Sendeleistung an der Buchse (nach gesetzlicher Grenze)
+  int8_t   legal_dbm;      // gesetzliche Grenze für die aktuelle Frequenz
+  int8_t   drive_dbm;      // eingestellter LR2021-Pegel
+  int8_t   out_max_dbm;    // Hardware-Maximum
 };
 struct Stats {
   uint32_t rx_ok;

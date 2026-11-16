@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.7.0
+
+- Carrier board 1.3: 868 MHz front end (Skyworks SE2435L, up to 1 W, LNA with bypass) and a socket for
+  a plug-in 868 MHz filter module (`hardware/filter868`)
+- ESP32 firmware 1.1.0: detects the front end, converts the transmit power to the drive level of the
+  LR2021, enforces the legal limits of the frequency (27 dBm in 869.4–869.65 MHz, otherwise 14 dBm),
+  switches the LNA automatically by the measured noise floor (or fixed on/off), RSSI refers to the
+  antenna connector; new commands FE_GET / FE_SET
+- App: recognises the front end and then allows the full 27 dBm in 869.4–869.65 MHz; Radio → Modem
+  shows the front end (PA/bypass, power, noise floor) and switches the LNA (automatic / on / off)
+
 ## 1.6.6
 
 - Maintenance release (no functional changes)

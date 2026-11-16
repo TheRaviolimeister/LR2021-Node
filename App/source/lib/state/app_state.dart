@@ -39,6 +39,7 @@ class ModemSlot {
   ModemInfo? info;
   ModemConfig? config;
   Stats? stats;
+  FeInfo? fe; // 868-MHz-Frontend (PA/LNA) der Trägerplatine, null = keins
   bool connecting = false;
   String? error;
   String status = tr('nicht verbunden');
@@ -559,6 +560,10 @@ class NodeApp extends ChangeNotifier {
     _scheduleSave();
     _log(s.role, LogKind.info, tr('Verbunden: Firmware {0}, {1}, Chip {2}', [info.firmware, info.bandName, info.chipHex]),
         tr('via {0}, Temp {1} °C', [s.client!.transport.label, info.tempC.toStringAsFixed(1)]));
+    s.fe = info.role == 'A' ? await s.client!.fe() : null;
+    if (s.fe != null) {
+      _log(s.role, LogKind.info, tr('868-MHz-Endstufe erkannt (bis {0} dBm)', [s.fe!.outMaxDbm]));
+    }
     await applyMode(s);
     unawaited(refreshStats(s));
     if (s.kind == TransportKind.node) {
@@ -635,7 +640,19 @@ class NodeApp extends ChangeNotifier {
   /// Erlaubte Höchstleistung für die aktuelle Betriebsart dieses Moduls.
   PowerLimit limitFor(ModemSlot s, [RadioMode? mode]) {
     final c = baseCfg(s, mode ?? modeOf(s));
-    return powerLimit(c.freqHz, bwHz: c.bwHz, licensed: settings.licensed, antennaGainDbi: antGain(s));
+    return powerLimit(c.freqHz, bwHz: c.bwHz, licensed: settings.licensed, antennaGainDbi: antGain(s), chipMaxSub: s.fe?.outMaxDbm);
+  }
+
+  /// LNA des Frontends: 0 automatisch, 1 an, 2 aus.
+  Future<void> setFeMode(ModemSlot s, int mode) async {
+    final c = s.client;
+    if (c == null || s.fe == null) return;
+    try {
+      s.fe = await c.setFe(mode) ?? s.fe;
+    } catch (e) {
+      _log(s.role, LogKind.err, tr('LNA umschalten fehlgeschlagen'), '$e');
+    }
+    notifyListeners();
   }
 
   int manualPower(ModemSlot s) => s.role == 'A' ? settings.powerHf : settings.powerLf;
@@ -655,7 +672,7 @@ class NodeApp extends ChangeNotifier {
 
   LoraCfg cfgFor(ModemSlot s, RadioMode m) {
     final c = baseCfg(s, m);
-    final lim = powerLimit(c.freqHz, bwHz: c.bwHz, licensed: settings.licensed, antennaGainDbi: antGain(s));
+    final lim = powerLimit(c.freqHz, bwHz: c.bwHz, licensed: settings.licensed, antennaGainDbi: antGain(s), chipMaxSub: s.fe?.outMaxDbm);
     final want = m == RadioMode.manual ? c.powerDbm : (settings.powerAuto ? lim.maxDbm : manualPower(s));
     c.powerDbm = lim.allowed ? (want > lim.maxDbm ? lim.maxDbm : want) : 0;
     c.freqHz += _corr(s);
@@ -755,6 +772,7 @@ class NodeApp extends ChangeNotifier {
     try {
       s.stats = await c.stats();
       s.info = await c.info();
+      if (s.fe != null) s.fe = await c.fe() ?? s.fe;
       notifyListeners();
     } catch (_) {}
   }

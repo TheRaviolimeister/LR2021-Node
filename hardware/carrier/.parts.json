@@ -59,12 +59,6 @@
   "assemble": true,
   "footprint": "R_0603_1608Metric"
  },
- "C9": {
-  "value": "DNP",
-  "lcsc": "",
-  "assemble": false,
-  "footprint": "C_0603_1608Metric"
- },
  "C10": {
   "value": "DNP",
   "lcsc": "",
@@ -124,6 +118,216 @@
   "lcsc": "",
   "assemble": false,
   "footprint": "C_0603_1608Metric"
+ },
+ "U8": {
+  "value": "SE2435L-R",
+  "lcsc": "C4748685",
+  "assemble": true,
+  "footprint": "QFN-24-1EP_4x4mm_P0.5mm_EP2.7x2.7mm"
+ },
+ "L2": {
+  "value": "1.2nH",
+  "lcsc": "C882496",
+  "assemble": true,
+  "footprint": "L_0603_1608Metric"
+ },
+ "C30": {
+  "value": "10pF",
+  "lcsc": "C85874",
+  "assemble": true,
+  "footprint": "C_0402_1005Metric"
+ },
+ "C31": {
+  "value": "5pF",
+  "lcsc": "C1573",
+  "assemble": true,
+  "footprint": "C_0402_1005Metric"
+ },
+ "L1": {
+  "value": "6.8nH",
+  "lcsc": "C84403",
+  "assemble": true,
+  "footprint": "L_0402_1005Metric"
+ },
+ "L7": {
+  "value": "1.0nH",
+  "lcsc": "C97981",
+  "assemble": true,
+  "footprint": "L_0402_1005Metric"
+ },
+ "C32": {
+  "value": "3.9pF",
+  "lcsc": "C76907",
+  "assemble": true,
+  "footprint": "C_0402_1005Metric"
+ },
+ "L8": {
+  "value": "5.6nH",
+  "lcsc": "C441735",
+  "assemble": true,
+  "footprint": "L_0603_1608Metric"
+ },
+ "L9": {
+  "value": "1.5nH",
+  "lcsc": "C113053",
+  "assemble": true,
+  "footprint": "L_0402_1005Metric"
+ },
+ "C33": {
+  "value": "3.3pF",
+  "lcsc": "C76906",
+  "assemble": true,
+  "footprint": "C_0402_1005Metric"
+ },
+ "L6": {
+  "value": "8.2nH",
+  "lcsc": "C98009",
+  "assemble": true,
+  "footprint": "L_0603_1608Metric"
+ },
+ "L5": {
+  "value": "6.8nH",
+  "lcsc": "C882493",
+  "assemble": true,
+  "footprint": "L_0603_1608Metric"
+ },
+ "L3": {
+  "value": "39nH",
+  "lcsc": "C113055",
+  "assemble": true,
+  "footprint": "L_0402_1005Metric"
+ },
+ "C26": {
+  "value": "22pF",
+  "lcsc": "C1555",
+  "assemble": true,
+  "footprint": "C_0402_1005Metric"
+ },
+ "C27": {
+  "value": "100pF",
+  "lcsc": "C1546",
+  "assemble": true,
+  "footprint": "C_0402_1005Metric"
+ },
+ "C28": {
+  "value": "47pF",
+  "lcsc": "C1567",
+  "assemble": true,
+  "footprint": "C_0402_1005Metric"
+ },
+ "L4": {
+  "value": "39nH",
+  "lcsc": "C113055",
+  "assemble": true,
+  "footprint": "L_0402_1005Metric"
+ },
+ "C22": {
+  "value": "4.7uF",
+  "lcsc": "C19666",
+  "assemble": true,
+  "footprint": "C_0603_1608Metric"
+ },
+ "C23": {
+  "value": "10nF",
+  "lcsc": "C15195",
+  "assemble": true,
+  "footprint": "C_0402_1005Metric"
+ },
+ "C25": {
+  "value": "100pF",
+  "lcsc": "C1546",
+  "assemble": true,
+  "footprint": "C_0402_1005Metric"
+ },
+ "C24": {
+  "value": "1nF",
+  "lcsc": "C1523",
+  "assemble": true,
+  "footprint": "C_0402_1005Metric"
+ },
+ "C35": {
+  "value": "3.3pF",
+  "lcsc": "C1811",
+  "assemble": true,
+  "footprint": "C_0805_2012Metric"
+ },
+ "R33": {
+  "value": "0R",
+  "lcsc": "C17168",
+  "assemble": true,
+  "footprint": "R_0402_1005Metric"
+ },
+ "R34": {
+  "value": "1k",
+  "lcsc": "C11702",
+  "assemble": true,
+  "footprint": "R_0402_1005Metric"
+ },
+ "R35": {
+  "value": "1k",
+  "lcsc": "C11702",
+  "assemble": true,
+  "footprint": "R_0402_1005Metric"
+ },
+ "R36": {
+  "value": "1k",
+  "lcsc": "C11702",
+  "assemble": true,
+  "footprint": "R_0402_1005Metric"
+ },
+ "R37": {
+  "value": "10k",
+  "lcsc": "C25744",
+  "assemble": true,
+  "footprint": "R_0402_1005Metric"
+ },
+ "U9": {
+  "value": "TLV75901",
+  "lcsc": "C544759",
+  "assemble": true,
+  "footprint": "WSON-6-1EP_2x2mm_P0.65mm_EP1x1.6mm"
+ },
+ "R31": {
+  "value": "75k",
+  "lcsc": "C23242",
+  "assemble": true,
+  "footprint": "R_0603_1608Metric"
+ },
+ "R32": {
+  "value": "10k",
+  "lcsc": "C25804",
+  "assemble": true,
+  "footprint": "R_0603_1608Metric"
+ },
+ "C20": {
+  "value": "10uF",
+  "lcsc": "C19702",
+  "assemble": true,
+  "footprint": "C_0603_1608Metric"
+ },
+ "C21": {
+  "value": "10uF",
+  "lcsc": "C19702",
+  "assemble": true,
+  "footprint": "C_0603_1608Metric"
+ },
+ "FB1": {
+  "value": "BLM18PG221",
+  "lcsc": "C80165",
+  "assemble": true,
+  "footprint": "L_0603_1608Metric"
+ },
+ "J22": {
+  "value": "1x5 socket 2.54",
+  "lcsc": "",
+  "assemble": false,
+  "footprint": "PinSocket_1x05_P2.54mm_Vertical"
+ },
+ "C9": {
+  "value": "2.7pF",
+  "lcsc": "C76904",
+  "assemble": true,
+  "footprint": "C_0402_1005Metric"
  },
  "J5": {
   "value": "USB4125-GF-A",

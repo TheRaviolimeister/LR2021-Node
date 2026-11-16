@@ -109,6 +109,20 @@ static void handleFrame(HostLink& l, uint8_t type, uint8_t seq, const uint8_t* d
       modem.setAutoRx(d[0] != 0);
       reply(l, type, seq, ST_OK);
       break;
+    case CMD_FE_GET: {
+      FeInfo f;
+      modem.fillFe(f);
+      reply(l, type, seq, ST_OK, &f, sizeof(f));
+      break;
+    }
+    case CMD_FE_SET: {
+      if (len != 2) { reply(l, type, seq, ST_BAD_LENGTH); break; }
+      int16_t st = modem.setFeMode(d[0], d[1] != 0);
+      FeInfo f;
+      modem.fillFe(f);
+      reply(l, type, seq, st, &f, sizeof(f));
+      break;
+    }
     case CMD_TX: {
       if (len < 4) { reply(l, type, seq, ST_BAD_LENGTH); break; }
       uint8_t flags = d[0];

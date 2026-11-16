@@ -497,6 +497,34 @@ class _InfoBox extends StatelessWidget {
           KV(tr('Laufzeit'), up == null ? '–' : tr('{0} h {1} min', [up.inHours, up.inMinutes % 60])),
           KV(tr('Frequenzbereich'), tr('{0}–{1} MHz', [(i.subMinHz / 1e6).toStringAsFixed(0), (i.subMaxHz / 1e6).toStringAsFixed(0)])),
         ],
+        if (s.fe != null) ...[
+          const Divider(height: 20),
+          KV(tr('868-MHz-Endstufe'), s.fe!.pa ? tr('Senden über PA') : tr('Senden über Bypass')),
+          KV(tr('Leistung an der Buchse'), tr('{0} dBm (erlaubt {1} dBm, Chip {2} dBm)', [s.fe!.outDbm, s.fe!.legalDbm, s.fe!.driveDbm])),
+          KV(
+              tr('Rauschboden'),
+              s.fe!.noiseOn == null
+                  ? tr('noch nicht gemessen')
+                  : tr('mit LNA {0} dBm · ohne {1} dBm', [s.fe!.noiseOn!.toStringAsFixed(1), s.fe!.noiseOff!.toStringAsFixed(1)])),
+          KV(tr('LNA gerade'), s.fe!.lnaOn ? tr('an') : tr('aus')),
+          const SizedBox(height: 6),
+          Row(children: [
+            Text(tr('LNA'), style: TextStyle(color: rc.muted)),
+            const SizedBox(width: 12),
+            Expanded(
+              child: SegmentedButton<int>(
+                segments: [
+                  ButtonSegment(value: 0, label: Text(tr('Auto'))),
+                  ButtonSegment(value: 1, label: Text(tr('an'))),
+                  ButtonSegment(value: 2, label: Text(tr('aus'))),
+                ],
+                selected: {s.fe!.lnaMode},
+                showSelectedIcon: false,
+                onSelectionChanged: (v) => app.setFeMode(s, v.first),
+              ),
+            ),
+          ]),
+        ],
         if (st != null) ...[
           const Divider(height: 20),
           Row(children: [

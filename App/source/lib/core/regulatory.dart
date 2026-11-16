@@ -57,9 +57,10 @@ class PowerLimit {
   const PowerLimit(this.maxDbm, this.allowed, this._reason);
 }
 
-/// Höchste erlaubte Leistung am Chip-Ausgang für eine Frequenz.
-PowerLimit powerLimit(int freqHz, {int bwHz = 0, required bool licensed, double antennaGainDbi = 2.15}) {
-  final chip = freqHz > 2000000000 ? chipMax24 : chipMaxSubGhz;
+/// Höchste erlaubte Leistung am Ausgang (Chip bzw. Endstufe) für eine Frequenz.
+/// [chipMaxSub]: Maximum unter 1 GHz, wenn eine Endstufe davor sitzt (868-MHz-Frontend der Trägerplatine).
+PowerLimit powerLimit(int freqHz, {int bwHz = 0, required bool licensed, double antennaGainDbi = 2.15, int? chipMaxSub}) {
+  final chip = freqHz > 2000000000 ? chipMax24 : (chipMaxSub ?? chipMaxSubGhz);
   final ham = hamBandFor(freqHz);
   if (licensed && ham != null) {
     return PowerLimit(chip, true, tr('Amateurfunk {0} – Chip-Maximum {1} dBm', [ham, chip]));

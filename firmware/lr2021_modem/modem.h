@@ -38,6 +38,8 @@ public:
   void fillInfo(InfoBlock& i);
   void fillStats(Stats& s);
   void resetStats();
+  void fillFe(FeInfo& f);
+  int16_t setFeMode(uint8_t mode, bool save);
 
   // gespeicherte Einstellungen
   void save();
@@ -68,6 +70,8 @@ private:
   void loadDefaults();
   void load();
   void measureHealth();
+  int8_t txDrive(uint32_t f, uint32_t bw, int8_t outDbm);   // Frontend: LR2021-Pegel für eine Ausgangsleistung
+  void feEvaluate();                                       // LNA-Automatik
   void log(uint8_t level, const char* fmt, ...);
   void led(uint8_t r, uint8_t g, uint8_t b);
 
