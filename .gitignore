@@ -32,8 +32,8 @@ App/source/pubspec.lock
 App/source/*.iml
 
 # carrier board: keep the manufacturing files
-!hardware/carrier/fabrication/*.zip
-!hardware/filter868/fabrication/*.zip
+!hardware/carrier/fabrication/lr2021-carrier-gerber.zip
+!hardware/filter868/fabrication/filter868-gerber.zip
 hardware/carrier/gen.log
 hardware/carrier/astar.so
 hardware/carrier/.gnd_links.json
