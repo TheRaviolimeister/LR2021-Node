@@ -193,6 +193,11 @@ not, bridge R2/R3 with a 0402 0 Ω resistor or a solder bridge. Leave the IPEX s
    needed.
 3. The remaining through-hole parts are soldered by hand, see `fabrication/hand-solder.csv`.
 
+Other assembly services (NextPCB, PCBWay, …) need manufacturer part numbers and often Excel files:
+use `fabrication/bom-mpn.xlsx` (or `.csv`: designators, quantity per board, manufacturer part
+number, manufacturer, LCSC number) as BOM and `fabrication/cpl.xlsx` as centroid / pick-and-place
+file. `make_assembly_files.py` creates them from `bom.csv` and `cpl.csv` (also for `filter868`).
+
 ## Assembly
 
 | Position | Part | Note |
