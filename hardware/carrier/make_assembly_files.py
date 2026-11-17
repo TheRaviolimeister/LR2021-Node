@@ -55,18 +55,74 @@ def col(i):
 
 
 def write_xlsx(path, rows, sheet="Sheet1"):
-    """Minimal .xlsx (one sheet, text cells; numbers stay text so nothing is reformatted)."""
-    data = []
+    """.xlsx with the parts Excel itself writes (shared strings, styles, document properties), so
+    that the upload checks of the assembly services accept it. Integers become number cells."""
+    strings, index, data = [], {}, []
     for r, row in enumerate(rows, 1):
-        cells = "".join('<c r="%s%d" t="inlineStr"><is><t xml:space="preserve">%s</t></is></c>'
-                        % (col(c), r, escape(str(v))) for c, v in enumerate(row))
-        data.append('<row r="%d">%s</row>' % (r, cells))
+        cells = []
+        for c, v in enumerate(row):
+            ref = "%s%d" % (col(c), r)
+            if isinstance(v, int):
+                cells.append('<c r="%s"><v>%d</v></c>' % (ref, v))
+                continue
+            s = str(v)
+            if s == "":
+                continue
+            if s not in index:
+                index[s] = len(strings)
+                strings.append(s)
+            cells.append('<c r="%s" t="s"><v>%d</v></c>' % (ref, index[s]))
+        data.append('<row r="%d">%s</row>' % (r, "".join(cells)))
+    ns = "http://schemas.openxmlformats.org"
+    ct = ns + "/officeDocument/2006/relationships"
+    width = max(len(r) for r in rows)
     files = {
-        "[Content_Types].xml": '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>',
-        "_rels/.rels": '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>',
-        "xl/workbook.xml": '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="%s" sheetId="1" r:id="rId1"/></sheets></workbook>' % escape(sheet),
-        "xl/_rels/workbook.xml.rels": '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>',
-        "xl/worksheets/sheet1.xml": '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>%s</sheetData></worksheet>' % "".join(data),
+        "[Content_Types].xml": '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<Types xmlns="%s/package/2006/content-types">'
+        '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+        '<Default Extension="xml" ContentType="application/xml"/>'
+        '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+        '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
+        '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>'
+        '<Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/>'
+        '<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>'
+        '<Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>'
+        '</Types>' % ns,
+        "_rels/.rels": '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<Relationships xmlns="%s/package/2006/relationships">'
+        '<Relationship Id="rId1" Type="%s/officeDocument" Target="xl/workbook.xml"/>'
+        '<Relationship Id="rId2" Type="%s/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>'
+        '<Relationship Id="rId3" Type="%s/extended-properties" Target="docProps/app.xml"/>'
+        '</Relationships>' % (ns, ct, ns, ct),
+        "docProps/core.xml": '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<cp:coreProperties xmlns:cp="%s/package/2006/metadata/core-properties" '
+        'xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>%s</dc:title></cp:coreProperties>' % (ns, escape(sheet)),
+        "docProps/app.xml": '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<Properties xmlns="%s/officeDocument/2006/extended-properties"><Application>Microsoft Excel</Application></Properties>' % ns,
+        "xl/workbook.xml": '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<workbook xmlns="%s/spreadsheetml/2006/main" xmlns:r="%s"><sheets>'
+        '<sheet name="%s" sheetId="1" r:id="rId1"/></sheets></workbook>' % (ns, ct, escape(sheet)),
+        "xl/_rels/workbook.xml.rels": '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<Relationships xmlns="%s/package/2006/relationships">'
+        '<Relationship Id="rId1" Type="%s/worksheet" Target="worksheets/sheet1.xml"/>'
+        '<Relationship Id="rId2" Type="%s/styles" Target="styles.xml"/>'
+        '<Relationship Id="rId3" Type="%s/sharedStrings" Target="sharedStrings.xml"/>'
+        '</Relationships>' % (ns, ct, ct, ct),
+        "xl/styles.xml": '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<styleSheet xmlns="%s/spreadsheetml/2006/main">'
+        '<fonts count="1"><font><sz val="11"/><name val="Calibri"/></font></fonts>'
+        '<fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>'
+        '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>'
+        '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'
+        '<cellXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/></cellXfs>'
+        '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>'
+        '</styleSheet>' % ns,
+        "xl/sharedStrings.xml": '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<sst xmlns="%s/spreadsheetml/2006/main" count="%d" uniqueCount="%d">%s</sst>'
+        % (ns, len(strings), len(strings), "".join('<si><t xml:space="preserve">%s</t></si>' % escape(s) for s in strings)),
+        "xl/worksheets/sheet1.xml": '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<worksheet xmlns="%s/spreadsheetml/2006/main"><dimension ref="A1:%s%d"/><sheetData>%s</sheetData></worksheet>'
+        % (ns, col(width - 1), len(rows), "".join(data)),
     }
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
         for name, text in files.items():
