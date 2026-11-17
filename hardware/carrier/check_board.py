@@ -164,7 +164,7 @@ if net_of("U1", "1") == net_of("U2", "1"):
     errors.append("3V3 of both ESP32 connected together")
 if net_of("U1", "1") == net_of("U5", "1"):
     errors.append("ESP32 3V3 connected to Pi 3V3")
-# ESP reset / boot: Pi pin -> 1k -> gate, drain -> EN / GPIO0, source GND, 100k gate pull-down
+# ESP reset / boot: Pi pin -> 1k -> gate, drain -> EN / GPIO0, source GND, 10k gate pull-down
 for esp, pin_en, pin_io0, (qe, qi), (re_, ri), (pe, pi_) in (
         ("U1", "29", "31", ("Q3", "Q4"), ("R11", "R12"), ("R15", "R16")),
         ("U2", "32", "33", ("Q5", "Q6"), ("R13", "R14"), ("R17", "R18"))):

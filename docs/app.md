@@ -5,7 +5,7 @@ An app for **Android, iOS, Windows and Linux** (Flutter). Language English or Ge
 
 ## Installing
 
-From the latest [release](../../releases/latest):
+From the latest [release](https://github.com/TheRaviolimeister/LR2021-Node/releases/latest):
 
 | System | File | Installation |
 |---|---|---|

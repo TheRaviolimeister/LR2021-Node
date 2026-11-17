@@ -36,6 +36,11 @@ const statusNames = <int, String>{
   -10: 'Kanal belegt',
   -11: 'Funkchip nicht bereit',
   -12: 'Zeitüberschreitung',
+  -13: 'Firmware-Datei ungültig',
+  -14: 'Firmware für das andere Modem',
+  -15: 'Prüfung der Firmware fehlgeschlagen',
+  -16: 'Fehler beim Schreiben in den Flash',
+  -17: 'kein Update begonnen',
 };
 
 String statusText(int s) => statusNames[s] != null ? tr(statusNames[s]!) : tr('Status {0}', [s]);

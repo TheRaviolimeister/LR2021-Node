@@ -64,6 +64,7 @@ Commands 0x50–0x53 exist from firmware 1.2.0 on, see [Firmware update over the
 | 0xE1 RX | i16 RSSI×10, i16 SNR×10, i32 frequency error Hz, u8 flags (bit0 CRC error), u32 time ms, then the data |
 | 0xE2 TX_DONE | u16 tx_id, i16 status, u32 airtime µs |
 | 0xE4 LOG | u8 level (0 info, 1 warning, 2 error), UTF-8 text |
+| 0xE5 ERROR | i16 status, i16 RadioLib code (reserved, the current firmware reports errors as LOG) |
 
 ## Structures
 

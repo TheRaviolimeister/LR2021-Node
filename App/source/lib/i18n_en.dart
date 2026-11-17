@@ -725,4 +725,9 @@ const Map<String, String> enTexts = {
   'mit LNA {0} dBm · ohne {1} dBm': 'with LNA {0} dBm · without {1} dBm',
   'LNA gerade': 'LNA now',
   'an': 'on',
+  'Firmware-Datei ungültig': 'invalid firmware file',
+  'Firmware für das andere Modem': 'firmware for the other modem',
+  'Prüfung der Firmware fehlgeschlagen': 'firmware check failed',
+  'Fehler beim Schreiben in den Flash': 'flash write error',
+  'kein Update begonnen': 'no update started',
 };
