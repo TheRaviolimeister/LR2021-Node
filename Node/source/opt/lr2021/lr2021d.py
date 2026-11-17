@@ -33,7 +33,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 from lrmodem import build_frame, parse_frame, open_port, LrModem, load_firmware, OTA_MIN_VERSION  # noqa: E402
 
-VERSION = "1.1.0"
+VERSION = "1.1.1"
 CONF_PATH = "/etc/lr2021/node.json"
 STATE_DIR = "/var/lib/lr2021"
 INSTALL_DIR = "/opt/lr2021"
@@ -485,15 +485,45 @@ class Hub:
             cur_v = (0, 0, 0)
         if connected and fw and cur_v >= OTA_MIN_VERSION:
             return self._ota(link, role, fw, logf)
+        usb_path = None
         if connected and not usb:
             if not fw:
                 return False, "Keine LR2021-Modem-Firmware: %s" % why
-            return False, ("ESP32 %s hat Firmware %s – das Update über die Modem-Verbindung gibt es erst ab "
-                           "%d.%d.%d. Einmal per USB flashen (1_Flash_ESP32_%s.bat)."
-                           % ((role, cur) + OTA_MIN_VERSION + (role,)))
+            # Ältere Firmware am Pi-UART (z. B. der Lochraster-Prototyp): einmalig per esptool über ein
+            # USB-Kabel vom ESP32 an die Node; danach gehen alle Updates über die Modem-Verbindung.
+            usb_path = self._usb_twin(role)
+            if not usb_path:
+                return False, ("ESP32 %s hat Firmware %s – das Update über die Modem-Verbindung gibt es erst ab "
+                               "%d.%d.%d. Einmalig per USB: den ESP32 %s mit einem USB-Kabel (Buchse „UART“/„COM“) "
+                               "an einen USB-Anschluss der Node stecken und das Update noch einmal starten "
+                               "(oder am PC 1_Flash_ESP32_%s.bat)."
+                               % ((role, cur) + OTA_MIN_VERSION + (role, role)))
+            logf.write("ESP32 %s (Firmware %s) antwortet auch an %s: einmaliges Flashen per USB\n"
+                       % (role, cur, usb_path))
         if fw and not fw["merged"]:
             return False, "Für das Flashen per USB wird das komplette Abbild (LR2021-Modem-%s.bin) gebraucht" % role
-        return self._esptool(link, role, image_path, logf)
+        ok, msg = self._esptool(link, role, image_path, logf, usb_path)
+        if ok and usb_path:
+            msg += " – das USB-Kabel kann wieder ab, weitere Updates laufen über die Modem-Verbindung"
+        return ok, msg
+
+    def _usb_twin(self, role):
+        """Freier USB-Port, an dem derselbe ESP32 (gleiche Rolle) antwortet, oder None."""
+        with self.lock:
+            busy = self.busy_paths() | set(self.flashing.values())
+            for p in sorted(glob.glob("/dev/ttyACM*")) + sorted(glob.glob("/dev/ttyUSB*")):
+                if p in busy:
+                    continue
+                r = probe_modem(p, self.cfg)
+                if r is None:
+                    continue
+                try:
+                    r[1].close()
+                except Exception:
+                    pass
+                if r[0] == role:
+                    return p
+        return None
 
     def _ota(self, link, role, fw, logf):
         with self.lock:
@@ -531,10 +561,10 @@ class Hub:
                 self.flashing.pop(role, None)
                 self.progress.pop(role, None)
 
-    def _esptool(self, link, role, image_path, logf):
+    def _esptool(self, link, role, image_path, logf, path=None):
         """Modem freigeben, esptool laufen lassen (nur USB), Modem wieder suchen."""
         with self.lock:
-            path = link.path if link.port is not None else None
+            path = path or (link.path if link.port is not None else None)
             if not path:
                 # ESP32 antwortet nicht (z. B. kaputte Firmware): genau ein freier USB-Port → den nehmen
                 busy = self.busy_paths() | set(self.flashing.values())

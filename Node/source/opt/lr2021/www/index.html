@@ -96,7 +96,7 @@ td.m{font-family:var(--mono)}
 <div class="grid">
   <section>
     <h2>ESP32 neu flashen</h2>
-    <p class="hint">Firmware-Datei (lr2021_modem_A.bin bzw. _B.bin, Adresse 0x0). Der Pi flasht selbst über USB.</p>
+    <p class="hint">Firmware-Datei (lr2021_modem_A.bin bzw. _B.bin, Adresse 0x0). Ab Firmware 1.2.0 über die Modem-Verbindung (kein Kabel nötig). Ältere Firmware einmalig: ESP32 per USB-Kabel (Buchse „UART“/„COM“) an die Node stecken, dann hier flashen.</p>
     <label for="espFile">Datei</label><input id="espFile" type="file" accept=".bin">
     <div class="row"><button id="flashA">Auf ESP32 A</button><button id="flashB" class="ghost">Auf ESP32 B</button></div>
     <div class="msg" id="espMsg"></div>

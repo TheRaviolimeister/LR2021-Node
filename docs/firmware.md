@@ -27,7 +27,11 @@ with its current firmware. Stored settings and the front-end calibration are kep
 (stop `lr2021d` first if it holds the port; `ota FILE --check` only checks the file).
 
 **First time to 1.2.0:** firmware up to 1.1.0 has no update function, so the step to 1.2.0 has to be
-made once over USB (below). The flash layout does not change, later updates work over the line.
+made once over USB. The flash layout does not change, later updates work over the line. The easiest
+way (node software ≥ 1.1.1, also for the perfboard build): connect the ESP32 with a USB cable from its
+**“UART”/“COM”** socket to a USB port of the node and upload the file in the web interface as usual –
+the node finds the same modem on USB and flashes it with esptool. Remove the cable afterwards. Or
+flash it from a PC (below).
 
 **Directly over USB:** connect the ESP32 to the PC at its **“COM”** socket. Writing the complete
 image at 0x0 also erases the stored settings (they are set again by the app or with `lrmodem.py`).

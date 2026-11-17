@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.7.1
+
+- Node 1.1.1: an ESP32 with firmware older than 1.2.0 (for example on a perfboard build) can be brought
+  to 1.2.0 through the node – connect it with a USB cable to a USB port of the node and upload the
+  firmware in the web interface; the node finds the same modem on USB and flashes it. All later
+  updates go over the modem line
+- App: plain-text messages for the firmware-update status codes
+- Documentation: perfboard builds stay supported by all firmware, node and app versions
+
 ## 1.7.0
 
 - Carrier board 1.3: 868 MHz front end (Skyworks SE2435L, up to 1 W, LNA with bypass), a socket for a

@@ -3,6 +3,14 @@
 > **Carrier board:** a ready-to-order PCB with exactly this wiring (plus input protection and ESP32
 > reset/boot control from the Pi) is in [hardware/carrier](../../hardware/carrier/README.md). The
 > tables below are the reference for both the PCB and a perfboard build.
+>
+> **Perfboard builds stay supported.** The same firmware, node software and app run on both: the
+> firmware detects the 868 MHz front end of the carrier board at start-up and without it works exactly
+> as before (LR2021 output, chip limit 22 dBm); the node finds the modems by their role, whichever UART
+> they are on; the app accepts the CP2102 console as well as the CH340 of the carrier board. Features
+> that need carrier hardware (front end, ESP32 reset from the Pi, Qwiic sockets) simply stay unused.
+> The only manual step is the one-time update to firmware 1.2.0 over USB (see
+> [firmware.md](../firmware.md#flashing)); all later firmware updates go over the modem line.
 
 ![Wiring](wiring.svg)
 
