@@ -1,0 +1,35 @@
+{
+ "version": "1.7.1",
+ "page": "https://github.com/TheRaviolimeister/LR2021-Node/releases/tag/v1.7.1",
+ "notes": "\n- App: the paperclip in the chat opens a menu \u2013 send your position (from the node's GPS), take a\n  photo, pick a picture or video from the gallery, record a voice message (up to 2 minutes, about\n  3 KB per second) or choose a file. Position works in every chat (Meshtastic also sends it as a\n  position packet, so it appears on the map of the others); pictures, voice messages and files go\n  over LR radio\n- App: pictures can be sent in three sizes (small 480 px, medium 800 px \u2013 the new default \u2013 and large\n  1280 px) or as the original; the dialog shows size and airtime of each. Files up to 1 MB (before\n  200 KB); photos keep their orientation\n- Node 1.1.1: an ESP32 with firmware older than 1.2.0 (for example on a perfboard build) can be brought\n  to 1.2.0 through the node \u2013 connect it with a USB cable to a USB port of the node and upload the\n  firmware in the web interface; the node finds the same modem on USB and flashes it. All later\n  updates go over the modem line\n- App: plain-text messages for the firmware-update status codes\n- Documentation: perfboard builds stay supported by all firmware, node and app versions\n\n",
+ "assets": {
+  "LR2021-Modem-A.bin": {
+   "size": 516112,
+   "sha256": "5ad0428df17155ba9a628dfad2b3a48a49aaa6714e89a12a22e0991b38957ffb"
+  },
+  "LR2021-Modem-B.bin": {
+   "size": 515664,
+   "sha256": "231ae34e16004e3b004d85dd9737d2523ea7d5e7282128a86edc3c2a0af7d551"
+  },
+  "LR2021-Node-android.apk": {
+   "size": 61977771,
+   "sha256": "cb96a7a7b6887e3747a9b67340330974705a104069d8df5d25247fda8f5d632b"
+  },
+  "LR2021-Node-linux-x64.tar.gz": {
+   "size": 11198719,
+   "sha256": "3ebc85df469f92910b14d01af0df93c0afec86e1cc26d527c7bf062952afa9f8"
+  },
+  "LR2021-Node-update-1.7.1.tar.gz": {
+   "size": 36595,
+   "sha256": "56bb0276596d3788db921fed51b50f6efce462abeb7808100d2154d901a05138"
+  },
+  "LR2021-Node-windows-x64.zip": {
+   "size": 13730599,
+   "sha256": "adf2910d4bd9d24228b4705e1a49d8dd32ffe1882359fdf67f698202801d63f8"
+  },
+  "SHA256SUMS.txt": {
+   "size": 547,
+   "sha256": "1a53bc0eeb359260c832e947375c9b97deb39d05054c751ba58c33477dd7e833"
+  }
+ }
+}
