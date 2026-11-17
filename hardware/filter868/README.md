@@ -30,7 +30,9 @@ the 868 MHz front end (SE2435L):
 The module is the part to change when another radio module or band is used (e.g. 915 MHz): build the
 same board with a SAW filter for that band in the same 3 × 3 mm package (DCC6C: input pin 2, output
 pin 5, all other pins ground). Without any filter the 868 MHz path of the carrier is open – bridge
-pin 2 and pin 4 of J22 with a short wire instead.
+pin 2 and pin 4 of J22 with a short wire instead and set the filter loss of the front-end calibration
+to 0 (`lrmodem.py fe --filter-loss 0`, see [firmware.md](../../docs/firmware.md)); the factory value
+of 3 dB assumes this module.
 
 ## Ordering and assembly
 

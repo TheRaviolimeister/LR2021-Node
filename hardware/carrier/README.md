@@ -117,7 +117,10 @@ USB data lines have a fixed fan-out (0.5 mm pin pitch).
   SAW filter is enough. The filter module is described in [hardware/filter868](../filter868); for a
   different band (another radio module, 915 MHz, …) plug in a module with a matching filter.
   **Without a filter module the 868 MHz path is open:** bridge pin 2 and pin 4 of J22 with a short
-  wire instead.
+  wire instead, and set the filter loss of the calibration to 0 (on the node:
+  `python3 /opt/lr2021/lrmodem.py -p socket://127.0.0.1:2021 fe --filter-loss 0`). The factory
+  value assumes the module (3 dB); with a bridge and 3 dB the output would be 3 dB above the target
+  and above the legal limit.
 - **Control from ESP32 A:** GPIO42 = CSD (front end on), GPIO41 = CPS (LNA on / bypass),
   GPIO40 = CTX (transmit via the PA), each through 1 kΩ. The three lines run in parallel next to the
   filter socket and cross the bus of ESP32 A once, with one via each, on the bottom layer. A 10 kΩ pull-down on CSD keeps the front end
