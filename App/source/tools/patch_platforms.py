@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""After `flutter create`: set app name, Android permissions (network, USB, install) and window title."""
+"""After `flutter create`: set app name, Android permissions (network, USB, install, microphone) and window title."""
 import pathlib, re, sys
 
 root = pathlib.Path(__file__).resolve().parent.parent
@@ -14,6 +14,7 @@ if man.exists():
         '<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>',
         '<uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>',
         '<uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>',
+        '<uses-permission android:name="android.permission.RECORD_AUDIO"/>',
     ]
     for line in need:
         if line not in s:
@@ -75,7 +76,9 @@ if ios.exists():
         "NSLocationWhenInUseUsageDescription": "Your position is shown on the map and can be shared on the mesh.",
         "NSMotionUsageDescription": "The compass turns the radar and the navigation arrow with the device.",
         "NSLocalNetworkUsageDescription": "The app connects to the LR2021 node in its Wi-Fi network.",
-        "NSPhotoLibraryUsageDescription": "Choose a picture to send over LR radio.",
+        "NSPhotoLibraryUsageDescription": "Choose a picture or video to send over LR radio.",
+        "NSCameraUsageDescription": "Take a photo to send over LR radio.",
+        "NSMicrophoneUsageDescription": "Record a voice message to send over LR radio.",
     }
     for k, v in keys.items():
         if "<key>%s</key>" % k in s:

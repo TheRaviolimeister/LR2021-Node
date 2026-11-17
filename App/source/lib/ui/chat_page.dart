@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
@@ -7,12 +8,16 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter/material.dart';
 import 'package:image/image.dart' as img;
+import 'package:image_picker/image_picker.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:record/record.dart';
 
+import '../geo/coords.dart' show toMgrs;
 import '../i18n.dart';
 import '../mesh/lr_file.dart';
 import '../state/app.dart';
+import '../state/app_state.dart';
 import '../state/models.dart';
 import 'theme.dart';
 import 'widgets.dart';
@@ -140,47 +145,123 @@ class _ThreadState extends State<_Thread> {
     super.dispose();
   }
 
-  /// Datei oder Bild auswählen und über LR-Funk senden.
+  /// Büroklammer: kleines Menü mit Kamera, Galerie, Sprachaufnahme und Datei.
   Future<void> _attach() async {
-    FilePickerResult? res;
+    final mobile = Platform.isAndroid || Platform.isIOS;
+    final lr = widget.chat == 'lr'; // Dateien nur über LR-Funk
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          ListTile(
+            leading: const Icon(Icons.my_location),
+            title: Text(tr('Position senden')),
+            subtitle: Text(tr('vom GPS der Node')),
+            onTap: () => Navigator.pop(ctx, 'position'),
+          ),
+          if (mobile && lr)
+            ListTile(
+              leading: const Icon(Icons.photo_camera_outlined),
+              title: Text(tr('Foto aufnehmen')),
+              onTap: () => Navigator.pop(ctx, 'camera'),
+            ),
+          if (lr)
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: Text(tr('Bild oder Video aus der Galerie')),
+              onTap: () => Navigator.pop(ctx, 'gallery'),
+            ),
+          if (lr)
+            ListTile(
+              leading: const Icon(Icons.mic_none),
+              title: Text(tr('Sprachnachricht aufnehmen')),
+              onTap: () => Navigator.pop(ctx, 'audio'),
+            ),
+          if (lr)
+            ListTile(
+              leading: const Icon(Icons.insert_drive_file_outlined),
+              title: Text(tr('Datei auswählen')),
+              onTap: () => Navigator.pop(ctx, 'file'),
+            ),
+          const SizedBox(height: 8),
+        ]),
+      ),
+    );
+    if (choice == null || !mounted) return;
     try {
-      res = await FilePicker.platform.pickFiles(withData: true);
+      switch (choice) {
+        case 'position':
+          await _sharePosition();
+        case 'camera':
+          final x = await ImagePicker().pickImage(source: ImageSource.camera, requestFullMetadata: false);
+          if (x != null) await _sendData(await x.readAsBytes(), _stampName('Foto', 'jpg', x.name));
+        case 'gallery':
+          if (mobile) {
+            final x = await ImagePicker().pickMedia(requestFullMetadata: false);
+            if (x != null) await _sendData(await x.readAsBytes(), x.name);
+          } else {
+            await _pickFile(FileType.media);
+          }
+        case 'audio':
+          final path = await showDialog<String>(context: context, barrierDismissible: false, builder: (_) => const _RecordDialog());
+          if (path == null) return;
+          final f = File(path);
+          final data = await f.readAsBytes();
+          try {
+            await f.delete();
+          } catch (_) {}
+          await _sendData(data, _stampName('Sprachnachricht', 'm4a', null));
+        case 'file':
+          await _pickFile(FileType.any);
+      }
     } catch (e) {
       if (mounted) toast(context, tr('Dateiauswahl nicht möglich: {0}', [e]), error: true);
+    }
+  }
+
+  /// Eigene Position teilen, bevorzugt vom GPS-Modul der Node.
+  Future<void> _sharePosition() async {
+    var fix = app.nodeFix;
+    if (fix == null) {
+      final src = app.settings.gpsSource;
+      if (src != 'node' && src != 'auto') {
+        await app.setGpsSource(src == 'geraet' ? 'auto' : 'node');
+        if (mounted) toast(context, tr('GPS der Node eingeschaltet (Einstellungen → Position).'));
+      }
+      if (!mounted) return;
+      final r = await showDialog<String>(context: context, barrierDismissible: false, builder: (_) => const _WaitFixDialog());
+      if (r == 'cancel' || !mounted) return;
+      fix = app.nodeFix;
+    }
+    final st = app.settings;
+    double lat, lon;
+    double? alt;
+    String from;
+    if (fix != null) {
+      (lat, lon, alt) = (fix.lat, fix.lon, fix.alt);
+      from = tr('GPS der Node');
+    } else if (st.lat != null && st.lon != null) {
+      (lat, lon, alt) = (st.lat!, st.lon!, st.alt?.toDouble());
+      from = tr('letzte bekannte Position ({0})', [app.gpsFrom.isEmpty ? tr('von Hand gesetzt') : app.gpsFrom]);
+    } else {
+      toast(context, tr('Keine Position: das GPS der Node hat noch keinen Fix.'), error: true);
       return;
     }
-    if (res == null || res.files.isEmpty || !mounted) return;
-    final f = res.files.first;
-    Uint8List? data = f.bytes;
-    if (data == null && f.path != null) data = await File(f.path!).readAsBytes();
-    if (data == null || !mounted) return;
-    var name = f.name;
-    var mime = mimeFor(name);
-    if (mime.startsWith('image/')) {
-      final small = await compute(shrinkImage, data);
-      if (small != null && small.length < data.length) {
-        data = small;
-        final dot = name.lastIndexOf('.');
-        name = '${dot > 0 ? name.substring(0, dot) : name}.jpg';
-        mime = 'image/jpeg';
-      }
-    }
-    if (!mounted) return;
-    final kb = (data.length / 1024).toStringAsFixed(1);
-    final parts = (data.length / LrFileProto.chunkSize).ceil();
-    final t = app.fileAirtimeS(data.length);
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(tr('Über LR-Funk senden?')),
+        title: Text(tr('Position senden?')),
         content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(name, style: const TextStyle(fontWeight: FontWeight.w700)),
-          const SizedBox(height: 6),
-          Text(tr('{0} KB · {1} Teile{2}', [kb, parts, t == null ? '' : tr(' · Sendezeit ca. {0} s', [t.toStringAsFixed(0)])])),
-          if (mime.startsWith('image/'))
+          Text(toMgrs(lat, lon), style: mono(ctx, size: 16)),
+          const SizedBox(height: 4),
+          Text('${lat.toStringAsFixed(5)}, ${lon.toStringAsFixed(5)}${alt == null ? '' : ' · ${alt.round()} m'}', style: mono(ctx, size: 13)),
+          const SizedBox(height: 8),
+          Text(tr('Quelle: {0}', [from]), style: TextStyle(fontSize: 12, color: fix == null ? ctx.rc.warn : ctx.rc.muted)),
+          if (fix == null)
             Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Text(tr('Das Bild wurde für die Funkübertragung verkleinert.'), style: TextStyle(fontSize: 12, color: ctx.rc.muted)),
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(tr('Das GPS der Node hat gerade keinen Fix.'), style: TextStyle(fontSize: 12, color: ctx.rc.warn)),
             ),
         ]),
         actions: [
@@ -190,6 +271,113 @@ class _ThreadState extends State<_Thread> {
       ),
     );
     if (ok != true || !mounted) return;
+    final err = app.sharePosition(widget.chat, lat, lon, alt);
+    if (err != null && mounted) toast(context, err, error: true);
+  }
+
+  /// Dateiname mit Datum und Uhrzeit, z. B. Foto_20261117_143005.jpg.
+  static String _stampName(String base, String ext, String? original) {
+    if (original != null && original.isNotEmpty && !original.startsWith('image_picker') && !original.startsWith('scaled_')) {
+      return original;
+    }
+    String two(int v) => v.toString().padLeft(2, '0');
+    final t = DateTime.now();
+    return '${base}_${t.year}${two(t.month)}${two(t.day)}_${two(t.hour)}${two(t.minute)}${two(t.second)}.$ext';
+  }
+
+  Future<void> _pickFile(FileType type) async {
+    final res = await FilePicker.platform.pickFiles(type: type, withData: true);
+    if (res == null || res.files.isEmpty || !mounted) return;
+    final f = res.files.first;
+    Uint8List? data = f.bytes;
+    if (data == null && f.path != null) data = await File(f.path!).readAsBytes();
+    if (data == null) return;
+    await _sendData(data, f.name);
+  }
+
+  /// Vorschau mit Größe und Sendezeit; Bilder in wählbarer Größe. Dann über LR-Funk senden.
+  Future<void> _sendData(Uint8List original, String name) async {
+    if (!mounted) return;
+    var mime = mimeFor(name);
+    const limit = NodeApp.maxFileBytes;
+    // Bildgrößen: (Name, Daten, Dateiname, MIME)
+    final options = <(String, Uint8List, String, String)>[];
+    if (mime.startsWith('image/') && mime != 'image/gif') {
+      final dot = name.lastIndexOf('.');
+      final jpgName = '${dot > 0 ? name.substring(0, dot) : name}.jpg';
+      for (final (label, side, q) in imageSizes) {
+        final small = await compute(shrinkImage, (original, side, q));
+        if (small == null) continue;
+        if (small.length >= original.length && original.length <= limit) {
+          options.add((label, original, name, mime));
+          break;
+        }
+        options.add((label, small, jpgName, 'image/jpeg'));
+      }
+      if (options.isNotEmpty && original.length <= limit && options.last.$2 != original) {
+        options.add(('Original', original, name, mime));
+      }
+    }
+    if (options.isEmpty) {
+      if (original.length > limit) {
+        if (mounted) toast(context, tr('Die Datei ist zu groß (höchstens {0} KB).', [limit ~/ 1024]), error: true);
+        return;
+      }
+      options.add(('', original, name, mime));
+    }
+    if (!mounted) return;
+    var sel = options.length > 1 ? 1 : 0;   // Standard: „Mittel“
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setD) {
+        final o = options[sel];
+        final kb = (o.$2.length / 1024).toStringAsFixed(1);
+        final parts = (o.$2.length / LrFileProto.chunkSize).ceil();
+        final t = app.fileAirtimeS(o.$2.length);
+        final tooBig = o.$2.length > limit;
+        return AlertDialog(
+          title: Text(tr('Über LR-Funk senden?')),
+          content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(o.$3, style: const TextStyle(fontWeight: FontWeight.w700)),
+            if (options.length > 1) ...[
+              const SizedBox(height: 10),
+              Text(tr('Bildgröße'), style: TextStyle(fontSize: 12, color: ctx.rc.muted)),
+              const SizedBox(height: 4),
+              Wrap(spacing: 6, runSpacing: 6, children: [
+                for (var i = 0; i < options.length; i++)
+                  ChoiceChip(
+                    label: Text('${tr(options[i].$1)} · ${(options[i].$2.length / 1024).toStringAsFixed(0)} KB'),
+                    selected: sel == i,
+                    onSelected: (_) => setD(() => sel = i),
+                  ),
+              ]),
+            ],
+            const SizedBox(height: 10),
+            Text(tr('{0} KB · {1} Teile{2}', [kb, parts, t == null ? '' : tr(' · Sendezeit ca. {0}', [_dur(t)])])),
+            if (tooBig)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text(tr('Die Datei ist zu groß (höchstens {0} KB).', [limit ~/ 1024]),
+                    style: TextStyle(fontSize: 12, color: ctx.rc.crit)),
+              )
+            else if (t != null && t > 600)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text(tr('Lange Sendezeit – der Kanal ist so lange belegt.'), style: TextStyle(fontSize: 12, color: ctx.rc.warn)),
+              ),
+          ]),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(tr('Abbrechen'))),
+            FilledButton(onPressed: tooBig ? null : () => Navigator.pop(ctx, true), child: Text(tr('Senden'))),
+          ],
+        );
+      }),
+    );
+    if (ok != true || !mounted) return;
+    final o = options[sel];
+    final data = o.$2;
+    name = o.$3;
+    mime = o.$4;
     String? local;
     try {
       final dir = await getApplicationDocumentsDirectory();
@@ -201,6 +389,12 @@ class _ThreadState extends State<_Thread> {
     } catch (_) {}
     final err = app.sendFile(data, name, mime, localPath: local);
     if (err != null && mounted) toast(context, err, error: true);
+  }
+
+  static String _dur(double s) {
+    final n = s.round();
+    if (n < 90) return tr('{0} s', [n]);
+    return tr('{0} min', [(n / 60).toStringAsFixed(n < 600 ? 1 : 0)]);
   }
 
   void _send() {
@@ -338,7 +532,7 @@ class _ThreadState extends State<_Thread> {
             ],
           ),
         ),
-      _Composer(ctrl: _ctrl, focus: _focus, onSend: _send, maxBytes: isLr ? 180 : 200, accent: col, onAttach: isLr ? _attach : null),
+      _Composer(ctrl: _ctrl, focus: _focus, onSend: _send, maxBytes: isLr ? 180 : 200, accent: col, onAttach: _attach),
     ]);
   }
 }
@@ -489,7 +683,7 @@ class _ComposerState extends State<_Composer> {
           IconButton(
             onPressed: widget.onAttach,
             icon: const Icon(Icons.attach_file),
-            tooltip: tr('Bild oder Datei senden'),
+            tooltip: tr('Foto, Sprachnachricht oder Datei senden'),
           ),
         Expanded(
           child: TextField(
@@ -518,18 +712,142 @@ class _ComposerState extends State<_Composer> {
   }
 }
 
-/// Bild für die Funkübertragung verkleinern (längste Seite 480 px, JPEG). Läuft in einem eigenen Isolate.
-Uint8List? shrinkImage(Uint8List data) {
+/// Bildgrößen für die Funkübertragung: (Name, längste Seite in px, JPEG-Qualität).
+const imageSizes = <(String, int, int)>[
+  ('Klein', 480, 55),
+  ('Mittel', 800, 65),
+  ('Groß', 1280, 75),
+];
+
+/// Bild für die Funkübertragung verkleinern (längste Seite, JPEG-Qualität). Läuft in einem eigenen Isolate.
+Uint8List? shrinkImage((Uint8List, int, int) a) {
+  final (data, maxSide, quality) = a;
   try {
     final im = img.decodeImage(data);
     if (im == null) return null;
-    const maxSide = 480;
-    final r = math.max(im.width, im.height) <= maxSide
-        ? im
-        : (im.width >= im.height ? img.copyResize(im, width: maxSide) : img.copyResize(im, height: maxSide));
-    return Uint8List.fromList(img.encodeJpg(r, quality: 55));
+    final o = img.bakeOrientation(im);   // Handyfotos: Drehung aus den EXIF-Daten übernehmen
+    final r = math.max(o.width, o.height) <= maxSide
+        ? o
+        : (o.width >= o.height ? img.copyResize(o, width: maxSide) : img.copyResize(o, height: maxSide));
+    return Uint8List.fromList(img.encodeJpg(r, quality: quality));
   } catch (_) {
     return null;
+  }
+}
+
+/// Sprachnachricht aufnehmen (AAC, mono, 16 kHz, 24 kbit/s ≈ 3 KB pro Sekunde, höchstens 2 Minuten).
+/// Gibt den Pfad der Aufnahme zurück oder null (abgebrochen).
+class _RecordDialog extends StatefulWidget {
+  const _RecordDialog();
+  @override
+  State<_RecordDialog> createState() => _RecordDialogState();
+}
+
+class _RecordDialogState extends State<_RecordDialog> {
+  static const maxSeconds = 120;
+  final _rec = AudioRecorder();
+  Timer? _tick;
+  String? _path;
+  String? _error;
+  int _secs = 0;
+  double _level = 0;
+  StreamSubscription<Amplitude>? _amp;
+
+  @override
+  void initState() {
+    super.initState();
+    _start();
+  }
+
+  Future<void> _start() async {
+    try {
+      if (!await _rec.hasPermission()) {
+        setState(() => _error = tr('Kein Zugriff auf das Mikrofon. Bitte in den Einstellungen des Geräts erlauben.'));
+        return;
+      }
+      if (!await _rec.isEncoderSupported(AudioEncoder.aacLc)) {
+        setState(() => _error = tr('Sprachaufnahme wird auf diesem Gerät nicht unterstützt.'));
+        return;
+      }
+      final dir = await getTemporaryDirectory();
+      final path = '${dir.path}${Platform.pathSeparator}lr2021_rec_${DateTime.now().millisecondsSinceEpoch}.m4a';
+      await _rec.start(
+          const RecordConfig(encoder: AudioEncoder.aacLc, bitRate: 24000, sampleRate: 16000, numChannels: 1, noiseSuppress: true),
+          path: path);
+      _path = path;
+      _amp = _rec.onAmplitudeChanged(const Duration(milliseconds: 150)).listen((a) {
+        if (mounted) setState(() => _level = ((a.current + 50) / 50).clamp(0.0, 1.0));
+      });
+      _tick = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (!mounted) return;
+        setState(() => _secs++);
+        if (_secs >= maxSeconds) _finish();
+      });
+      if (mounted) setState(() {});
+    } catch (e) {
+      if (mounted) setState(() => _error = tr('Aufnahme nicht möglich: {0}', [e]));
+    }
+  }
+
+  Future<void> _finish() async {
+    _tick?.cancel();
+    await _amp?.cancel();
+    String? p;
+    try {
+      p = await _rec.stop();
+    } catch (_) {}
+    if (mounted) Navigator.pop(context, (p != null && File(p).existsSync()) ? p : _path);
+  }
+
+  Future<void> _cancel() async {
+    _tick?.cancel();
+    await _amp?.cancel();
+    try {
+      await _rec.cancel();
+    } catch (_) {}
+    if (mounted) Navigator.pop(context);
+  }
+
+  @override
+  void dispose() {
+    _tick?.cancel();
+    _amp?.cancel();
+    _rec.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final rc = context.rc;
+    String two(int v) => v.toString().padLeft(2, '0');
+    final running = _path != null && _error == null;
+    return AlertDialog(
+      title: Text(tr('Sprachnachricht')),
+      content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+        if (_error != null)
+          Text(_error!, style: TextStyle(color: rc.crit))
+        else ...[
+          Row(children: [
+            Icon(Icons.fiber_manual_record, color: running ? rc.crit : rc.muted, size: 16),
+            const SizedBox(width: 8),
+            Text('${two(_secs ~/ 60)}:${two(_secs % 60)} / ${two(maxSeconds ~/ 60)}:${two(maxSeconds % 60)}',
+                style: mono(context, size: 18)),
+          ]),
+          const SizedBox(height: 10),
+          LinearProgressIndicator(value: _level, color: rc.lf, backgroundColor: rc.line),
+          const SizedBox(height: 8),
+          Text(tr('ca. {0} KB', [(_secs * 3.1).toStringAsFixed(0)]), style: TextStyle(fontSize: 12, color: rc.muted)),
+        ],
+      ]),
+      actions: [
+        TextButton(onPressed: _cancel, child: Text(tr('Abbrechen'))),
+        FilledButton.icon(
+          onPressed: running && _secs >= 1 ? _finish : null,
+          icon: const Icon(Icons.stop),
+          label: Text(tr('Fertig')),
+        ),
+      ],
+    );
   }
 }
 
@@ -568,7 +886,15 @@ class _Attachment extends StatelessWidget {
       body = InkWell(
         onTap: exists ? () => OpenFilex.open(path) : null,
         child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(m.isImage ? Icons.image_outlined : Icons.insert_drive_file_outlined, color: fg),
+          Icon(
+              m.isImage
+                  ? Icons.image_outlined
+                  : (m.mime ?? '').startsWith('audio/')
+                      ? Icons.mic_none
+                      : (m.mime ?? '').startsWith('video/')
+                          ? Icons.movie_outlined
+                          : Icons.insert_drive_file_outlined,
+              color: fg),
           const SizedBox(width: 8),
           Flexible(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -595,5 +921,56 @@ class _Attachment extends StatelessWidget {
           child: Text(m.info, style: TextStyle(fontSize: 11, color: rc.muted)),
         ),
     ]);
+  }
+}
+
+/// Wartet bis zu 20 s auf einen Fix vom GPS der Node. Ergebnis: 'fix', 'none' (Zeit um) oder 'cancel'.
+class _WaitFixDialog extends StatefulWidget {
+  const _WaitFixDialog();
+  @override
+  State<_WaitFixDialog> createState() => _WaitFixDialogState();
+}
+
+class _WaitFixDialogState extends State<_WaitFixDialog> {
+  Timer? _t;
+  int _ms = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _t = Timer.periodic(const Duration(milliseconds: 500), (_) {
+      if (!mounted) return;
+      _ms += 500;
+      if (app.nodeFix != null) {
+        _t?.cancel();
+        Navigator.pop(context, 'fix');
+      } else if (_ms >= 20000) {
+        _t?.cancel();
+        Navigator.pop(context, 'none');
+      } else {
+        setState(() {});
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _t?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(tr('Warte auf GPS der Node …')),
+      content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+        LinearProgressIndicator(value: _ms / 20000),
+        const SizedBox(height: 10),
+        Text(app.nodeGps.status, style: TextStyle(fontSize: 12, color: context.rc.muted)),
+      ]),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context, 'cancel'), child: Text(tr('Abbrechen'))),
+      ],
+    );
   }
 }

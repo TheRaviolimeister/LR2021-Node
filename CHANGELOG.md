@@ -2,6 +2,14 @@
 
 ## 1.7.1
 
+- App: the paperclip in the chat opens a menu – send your position (from the node's GPS), take a
+  photo, pick a picture or video from the gallery, record a voice message (up to 2 minutes, about
+  3 KB per second) or choose a file. Position works in every chat (Meshtastic also sends it as a
+  position packet, so it appears on the map of the others); pictures, voice messages and files go
+  over LR radio
+- App: pictures can be sent in three sizes (small 480 px, medium 800 px – the new default – and large
+  1280 px) or as the original; the dialog shows size and airtime of each. Files up to 1 MB (before
+  200 KB); photos keep their orientation
 - Node 1.1.1: an ESP32 with firmware older than 1.2.0 (for example on a perfboard build) can be brought
   to 1.2.0 through the node – connect it with a USB cable to a USB port of the node and upload the
   firmware in the web interface; the node finds the same modem on USB and flashes it. All later

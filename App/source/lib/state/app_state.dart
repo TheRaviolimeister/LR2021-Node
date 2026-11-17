@@ -1024,6 +1024,8 @@ class NodeApp extends ChangeNotifier {
   }
 
   // ------------------------------------------------------------------ Dateien und Bilder (LR-Funk)
+  /// Größte Datei für LR-Funk (1 MB ≈ 5800 Teile; bei SF9/125 kHz rund eine Stunde Sendezeit).
+  static const maxFileBytes = 1024 * 1024;
   final Map<int, _OutXfer> _outX = {};
   final Map<String, _InXfer> _inX = {};
   final Set<String> _doneX = {};
@@ -1043,7 +1045,7 @@ class NodeApp extends ChangeNotifier {
     if (s == null) return tr('Kein Funkmodul im LR-Funk-Betrieb verbunden (Funk → ESP32 B).');
     if (settings.callsign.trim().isEmpty) return tr('Bitte zuerst dein Rufzeichen in den Einstellungen eintragen.');
     if (data.isEmpty) return tr('Die Datei ist leer.');
-    if (data.length > 200 * 1024) return tr('Die Datei ist zu groß (höchstens 200 KB).');
+    if (data.length > maxFileBytes) return tr('Die Datei ist zu groß (höchstens {0} KB).', [maxFileBytes ~/ 1024]);
     final me = settings.myNum == 0 ? 0x4C520000 : settings.myNum;
     final xfer = _newId();
     final chunks = FileChunk.split(data, mime, name, xfer);
@@ -1120,7 +1122,8 @@ class NodeApp extends ChangeNotifier {
       x.finished = true;
       x.timer?.cancel();
       _scheduleSave();
-    } else if (a.missing.isNotEmpty && x.round < 8) {
+    } else if (a.missing.isNotEmpty && x.round < 8 + x.chunks.length ~/ 200) {
+      // höchstens 90 fehlende Teile pro Rückmeldung: große Dateien brauchen mehr Runden
       x.round++;
       x.timer?.cancel();
       x.msg.info = tr('{0} Teile fehlen bei {1} – sende erneut', [a.missing.length, who]);
@@ -1386,6 +1389,24 @@ class NodeApp extends ChangeNotifier {
   }
 
   bool get _nodeFixFresh => nodeGps.lastFix != null && DateTime.now().difference(nodeGps.lastFix!).inSeconds < 30;
+
+  /// Aktuelle Position vom GPS-Modul der Node (höchstens 30 s alt), sonst null.
+  GpsFix? get nodeFix => _nodeFixFresh ? nodeGps.last : null;
+
+  /// Position in einem Chat teilen: als Text (MGRS und Grad) und bei Meshtastic zusätzlich als Positionspaket,
+  /// damit sie bei den anderen auch auf der Karte erscheint. Gibt Fehlertext oder null zurück.
+  String? sharePosition(String chat, double lat, double lon, double? alt) {
+    final text = tr('📍 Position {0} · {1}, {2}{3}',
+        [toMgrs(lat, lon), lat.toStringAsFixed(5), lon.toStringAsFixed(5), alt == null ? '' : ' · ${alt.round()} m']);
+    final err = sendText(chat, text);
+    if (err != null) return err;
+    if (chat.startsWith('dm:')) {
+      sendPosition(dest: int.parse(chat.substring(4), radix: 16));
+    } else if (chat.startsWith('mt:')) {
+      sendPosition();
+    }
+    return null;
+  }
 
   /// GPS-Quelle anwenden: aus / geraet / node / auto (Node bevorzugt, sonst Gerät).
   Future<String?> setGpsSource(String src) async {

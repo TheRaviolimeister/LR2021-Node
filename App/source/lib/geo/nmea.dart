@@ -66,6 +66,7 @@ class NodeGps {
   bool _on = false;
   final NmeaParser parser = NmeaParser();
   DateTime? lastFix;
+  GpsFix? last;
   String status = 'aus';
 
   bool get connected => _sock != null;
@@ -87,6 +88,7 @@ class NodeGps {
           final f = parser.feed(line);
           if (f != null) {
             lastFix = f.at;
+            last = f;
             status = tr('Fix · {0} Satelliten', [parser.sats]);
             onFix(f);
           } else if (!parser.valid) {
@@ -117,6 +119,7 @@ class NodeGps {
       final f = parser.feed(line);
       if (f != null) {
         lastFix = f.at;
+        last = f;
         status = tr('Fix · {0} Satelliten (Node-Kabel)', [parser.sats]);
         onFix(f);
       } else if (!parser.valid) {

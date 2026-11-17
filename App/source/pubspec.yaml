@@ -1,7 +1,7 @@
 name: lr2021_app
 description: LR2021 Node – Steuerung, Meshtastic-Chat, MeshCore, eigener 70-cm-Funk.
 publish_to: 'none'
-version: 1.7.0+13
+version: 1.7.1+14
 
 environment:
   sdk: '>=3.4.0 <4.0.0'
@@ -23,6 +23,8 @@ dependencies:
   open_filex: ^4.5.0
   archive: ^3.6.1
   url_launcher: ^6.3.0
+  image_picker: ^1.2.4
+  record: ^7.2.0
 
 dev_dependencies:
   flutter_test:

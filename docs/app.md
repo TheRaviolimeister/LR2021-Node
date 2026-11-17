@@ -43,9 +43,13 @@ connects to the node over Wi-Fi (“Network (Pi)”); USB connections are not av
 ## Features
 
 - **Chat:** Meshtastic channels (default key and own keys), end-to-end encrypted direct messages
-  (Meshtastic PKI), delivery confirmation, quick messages, SOS with position (MGRS).
-- **LR radio 70 cm:** own plain-text channel with callsign, automatic acknowledgement, **images and
-  files** (images are reduced to 480 px; missing parts are requested selectively).
+  (Meshtastic PKI), delivery confirmation, quick messages, SOS with position (MGRS). The paperclip
+  sends your position from the node's GPS into any chat (MGRS and degrees; on Meshtastic also as a
+  position packet).
+- **LR radio 70 cm:** own plain-text channel with callsign, automatic acknowledgement, **photos (camera
+  or gallery), voice messages and files** up to 1 MB. Pictures in three sizes (480 / 800 / 1280 px) or
+  the original, the dialog shows the airtime; voice messages AAC, up to 2 minutes (about 3 KB/s);
+  missing parts are requested selectively.
 - **Nodes:** every station heard (Meshtastic, MeshCore, LR radio) with signal, hops, device, battery,
   position, distance; request node info, position and telemetry, trace route, favourites, ignore.
 - **Map:** topo, satellite, hybrid (aerial imagery with street names), street; save areas for offline
