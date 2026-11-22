@@ -170,7 +170,7 @@ for layer in (pcbnew.F_Cu, pcbnew.B_Cu):
     z.SetIslandRemovalMode(pcbnew.ISLAND_REMOVAL_MODE_ALWAYS)
     board.Add(z)
 
-text("868 FILTER", W / 2, 8.2, 0.8)
+text("868-870 MHz", W / 2, 8.2, 0.8)          # pass band, readable when plugged in
 text("868-870 MHz SAW", W / 2, 6.9, 0.8, pcbnew.B_SilkS, mirror=True)
 text("LR2021 Node", W / 2, 8.1, 0.8, pcbnew.B_SilkS, mirror=True)
 board.Save(OUT_PCB)
