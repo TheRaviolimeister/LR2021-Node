@@ -103,6 +103,23 @@ class FileAck {
   }
 }
 
+/// Sendereihenfolge, wenn jedes Teil zweimal gesendet wird: die zweite Kopie folgt [lag] Teile später (zeitversetzt,
+/// damit ein kurzer Einbruch nicht beide trifft). Das letzte Teil geht nur einmal ganz am Ende raus – die Empfänger
+/// melden sich erst danach mit fehlenden Teilen.
+List<int> fileSendOrder(int n, {int lag = 8}) {
+  if (n < 2) return [for (var i = 0; i < n; i++) i];
+  final out = <int>[];
+  for (var i = 0; i < n - 1; i++) {
+    out.add(i);
+    if (i >= lag) out.add(i - lag);
+  }
+  for (var i = (n - 1 - lag).clamp(0, n - 1); i < n - 1; i++) {
+    out.add(i);
+  }
+  out.add(n - 1);
+  return out;
+}
+
 /// MIME-Typ aus dem Dateinamen.
 String mimeFor(String name) {
   final e = name.toLowerCase().split('.').last;

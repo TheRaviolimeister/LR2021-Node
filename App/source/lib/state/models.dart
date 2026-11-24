@@ -71,6 +71,7 @@ class Settings {
   LoraCfg manualA = LoraCfg(freqHz: 869525000, bwHz: 125000, sf: 9, cr: 5, sync: 0x12, powerDbm: 10, preamble: 8);
   LoraCfg manualB = LoraCfg(freqHz: 433875000, bwHz: 125000, sf: 9, cr: 5, sync: 0x12, powerDbm: 10, preamble: 8);
   bool lrAutoAck = true;
+  bool lrFileTwice = true; // Dateiteile zweimal senden (zeitversetzt)
   int lrBeaconMin = 0;
   int theme = 2; // 0 System, 1 hell, 2 dunkel
   String mapLayer = 'topo';
@@ -126,6 +127,7 @@ class Settings {
         'manA': loraToJson(manualA),
         'manB': loraToJson(manualB),
         'lrAck': lrAutoAck,
+        'lrFile2': lrFileTwice,
         'lrBeacon': lrBeaconMin,
         'theme': theme,
         'mapLayer': mapLayer,
@@ -193,6 +195,7 @@ class Settings {
     manualB = loraFromJson(j['manB'], manualB);
     lrAutoAck = j['lrAck'] as bool? ?? true;
     lrBeaconMin = j['lrBeacon'] as int? ?? 0;
+    lrFileTwice = j['lrFile2'] as bool? ?? true;
     theme = j['theme'] as int? ?? 2;
     mapLayer = j['mapLayer'] as String? ?? mapLayer;
     mapOffline = j['mapOff'] as bool? ?? false;

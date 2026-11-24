@@ -40,6 +40,23 @@ void main() {
     expect(FileAck.parse(FileAck.build(7, true, const []))!.done, isTrue);
   });
 
+  test('Dateiteile doppelt: jede Kopie zeitversetzt, letztes Teil einmal am Ende', () {
+    for (final n in [1, 2, 5, 9, 10, 40]) {
+      final o = fileSendOrder(n);
+      final count = <int, int>{};
+      for (final i in o) {
+        count[i] = (count[i] ?? 0) + 1;
+      }
+      expect(count.keys.toSet(), {for (var i = 0; i < n; i++) i});
+      for (var i = 0; i < n - 1; i++) {
+        expect(count[i], 2);
+      }
+      expect(count[n - 1], 1);
+      expect(o.last, n - 1);
+    }
+    expect(fileSendOrder(12).take(11).toList(), [0, 1, 2, 3, 4, 5, 6, 7, 8, 0, 9]);
+  });
+
   test('Versionen vergleichen', () {
     expect(Updater.compare('v1.6.0', '1.5.0'), greaterThan(0));
     expect(Updater.compare('1.5.0', '1.5.0'), 0);

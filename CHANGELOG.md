@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.7.2
+
+- App: every part of a file or picture is sent twice over LR radio (the second copy eight parts later,
+  so a short disturbance – for example a 433.92 MHz weather station or remote key – does not hit both).
+  Receivers keep one copy of each part. Can be switched off under Settings → LR radio 70 cm
+
 ## 1.7.1
 
 - App: the paperclip in the chat opens a menu – send your position (from the node's GPS), take a

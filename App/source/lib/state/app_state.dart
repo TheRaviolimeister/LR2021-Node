@@ -1035,7 +1035,8 @@ class NodeApp extends ChangeNotifier {
     final s = lrSlot;
     final cfg = s?.config?.lora;
     if (cfg == null) return null;
-    final n = (bytes / LrFileProto.chunkSize).ceil();
+    var n = (bytes / LrFileProto.chunkSize).ceil();
+    if (settings.lrFileTwice) n = 2 * n - 1;
     return n * (cfg.airtimeMs(LrFileProto.chunkSize + 30) + 200) / 1000;
   }
 
@@ -1065,7 +1066,7 @@ class NodeApp extends ChangeNotifier {
     messages.add(msg);
     final x = _OutXfer(xfer, chunks, msg, s);
     _outX[xfer] = x;
-    _sendChunks(x, [for (var i = 0; i < chunks.length; i++) i]);
+    _sendChunks(x, settings.lrFileTwice ? fileSendOrder(chunks.length) : [for (var i = 0; i < chunks.length; i++) i]);
     _scheduleSave();
     notifyListeners();
     return null;

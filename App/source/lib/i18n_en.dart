@@ -508,6 +508,9 @@ const Map<String, String> enTexts = {
   'Tipp: Knoten oder Wegpunkt antippen → „Hinführen“ – der Pfeil zeigt dann den Weg.': 'Tip: tap a node or waypoint → “Navigate” – the arrow then shows the way.',
   'Tipp: „Gebiet speichern“ (Download-Knopf) lädt das sichtbare Gebiet für unterwegs.': 'Tip: “Save area” (download button) stores the visible area for use on the go.',
   'Ton an': 'Sound on',
+  'Dateiteile doppelt senden': 'Send file parts twice',
+  'Jedes Teil geht zweimal raus (zeitversetzt) – sicherer bei schwachem Signal, dauert doppelt so lange.':
+      'Every part is sent twice (staggered) – more reliable with a weak signal, takes twice as long.',
   'Ton aus': 'Sound off',
   'Ton bei neuer Nachricht': 'Sound on new message',
   'Topo': 'Topo',

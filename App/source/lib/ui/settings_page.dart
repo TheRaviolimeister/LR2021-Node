@@ -384,6 +384,16 @@ class _SettingsPageState extends State<SettingsPage> {
               _save();
             }),
           ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: Text(tr('Dateiteile doppelt senden')),
+            subtitle: Text(tr('Jedes Teil geht zweimal raus (zeitversetzt) – sicherer bei schwachem Signal, dauert doppelt so lange.')),
+            value: st.lrFileTwice,
+            onChanged: (v) => setState(() {
+              st.lrFileTwice = v;
+              _save();
+            }),
+          ),
           DropdownButtonFormField<int>(
             value: [0, 10, 30, 60].contains(st.lrBeaconMin) ? st.lrBeaconMin : 0,
             decoration: InputDecoration(labelText: tr('Bake mit Rufzeichen')),
