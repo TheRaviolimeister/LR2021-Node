@@ -57,6 +57,22 @@ void main() {
     expect(fileSendOrder(12).take(11).toList(), [0, 1, 2, 3, 4, 5, 6, 7, 8, 0, 9]);
   });
 
+  test('2,4-GHz-Ankündigung und größere Teile', () {
+    final o = FileOffer(0xA1B2C3D4, 2425000000, 812500, 5, 5, 74, 14665);
+    final p = FileOffer.parse(o.build())!;
+    expect([p.xfer, p.freqHz, p.bwHz, p.sf, p.cr, p.count, p.size], [0xA1B2C3D4, 2425000000, 812500, 5, 5, 74, 14665]);
+    final data = Uint8List.fromList(List<int>.generate(5000, (i) => i * 13 & 0xFF));
+    final chunks = FileChunk.split(data, 'image/jpeg', 'bild.jpg', 7, size: LrFileProto.chunkSize24);
+    final back = <int>[];
+    for (final c in chunks) {
+      back.addAll(FileChunk.parse(c)!.data);
+      final pkt = LrPacket.build(LrType.file, 1, 2, 'DL5RAV-12345', '', c); // längstes Rufzeichen (12)
+      expect(pkt.length, lessThanOrEqualTo(255));
+    }
+    expect(back, data);
+    expect(chunks.length, lessThan(FileChunk.split(data, 'image/jpeg', 'bild.jpg', 7).length));
+  });
+
   test('Versionen vergleichen', () {
     expect(Updater.compare('v1.6.0', '1.5.0'), greaterThan(0));
     expect(Updater.compare('1.5.0', '1.5.0'), 0);

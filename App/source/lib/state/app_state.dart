@@ -52,6 +52,9 @@ class ModemSlot {
   final List<_TxJob> _queue = [];
   bool _txRunning = false;
   StreamSubscription<ModemEvent>? _sub;
+  bool on24 = false; // gerade auf dem 2,4-GHz-Dateikanal
+  bool send24 = false; // sendet selbst gerade eine Datei dort (dann steuert der Sender die Rückkehr)
+  Timer? _back24;
 
   bool get connected => client != null && !client!.isClosed;
   String get band => role == 'A' ? tr('HF 868') : tr('LF 433');
@@ -62,7 +65,9 @@ class _TxJob {
   final Uint8List data;
   final String what;
   final void Function(TxDoneEvent ev)? done;
-  _TxJob(this.data, this.what, this.done);
+  final Future<void> Function()? action; // statt zu senden: z. B. umschalten (in der Reihenfolge der Warteschlange)
+  final int gapMs; // Pause nach dem Senden
+  _TxJob(this.data, this.what, this.done, {this.action, this.gapMs = 150});
 }
 
 class NodeApp extends ChangeNotifier {
@@ -711,6 +716,8 @@ class NodeApp extends ChangeNotifier {
     if (c == null) return tr('nicht verbunden');
     final m = modeOf(s);
     final cfg = cfgFor(s, m);
+    s.on24 = false;
+    s._back24?.cancel();
     try {
       s.status = tr('stelle ein …');
       notifyListeners();
@@ -825,8 +832,13 @@ class NodeApp extends ChangeNotifier {
   ModemSlot? get meshtasticSlot => _slotFor(RadioMode.meshtastic);
   ModemSlot? get lrSlot => _slotFor(RadioMode.lrfunk);
 
-  void _enqueue(ModemSlot s, Uint8List data, String what, [void Function(TxDoneEvent ev)? done]) {
-    s._queue.add(_TxJob(data, what, done));
+  void _enqueue(ModemSlot s, Uint8List data, String what, [void Function(TxDoneEvent ev)? done, int gapMs = 150]) {
+    s._queue.add(_TxJob(data, what, done, gapMs: gapMs));
+    _pump(s);
+  }
+
+  void _enqueueAction(ModemSlot s, String what, Future<void> Function() f) {
+    s._queue.add(_TxJob(Uint8List(0), what, null, action: f));
     _pump(s);
   }
 
@@ -836,6 +848,14 @@ class NodeApp extends ChangeNotifier {
     try {
       while (s._queue.isNotEmpty && s.connected) {
         final job = s._queue.removeAt(0);
+        if (job.action != null) {
+          try {
+            await job.action!();
+          } catch (e) {
+            _log(s.role, LogKind.err, job.what, '$e');
+          }
+          continue;
+        }
         s.transmitting = true;
         notifyListeners();
         _log(s.role, LogKind.tx, job.what, '${job.data.length} B  ${hex(job.data)}');
@@ -854,7 +874,7 @@ class NodeApp extends ChangeNotifier {
         }
         job.done?.call(ev);
         notifyListeners();
-        await Future<void>.delayed(const Duration(milliseconds: 150));
+        await Future<void>.delayed(Duration(milliseconds: job.gapMs));
       }
     } finally {
       s._txRunning = false;
@@ -1035,6 +1055,11 @@ class NodeApp extends ChangeNotifier {
     final s = lrSlot;
     final cfg = s?.config?.lora;
     if (cfg == null) return null;
+    if (_fast24(s!)) {
+      final c24 = file24Cfg(s);
+      final n24 = (bytes / LrFileProto.chunkSize24).ceil();
+      return 2 + n24 * (c24.airtimeMs(LrFileProto.chunkSize24 + 30) + 60) / 1000;
+    }
     var n = (bytes / LrFileProto.chunkSize).ceil();
     if (settings.lrFileTwice) n = 2 * n - 1;
     return n * (cfg.airtimeMs(LrFileProto.chunkSize + 30) + 200) / 1000;
@@ -1049,7 +1074,8 @@ class NodeApp extends ChangeNotifier {
     if (data.length > maxFileBytes) return tr('Die Datei ist zu groß (höchstens {0} KB).', [maxFileBytes ~/ 1024]);
     final me = settings.myNum == 0 ? 0x4C520000 : settings.myNum;
     final xfer = _newId();
-    final chunks = FileChunk.split(data, mime, name, xfer);
+    final fast = _fast24(s);
+    final chunks = FileChunk.split(data, mime, name, xfer, size: fast ? LrFileProto.chunkSize24 : LrFileProto.chunkSize);
     final msg = Message(
         chat: 'lr',
         from: 'lr:${me.toRadixString(16).padLeft(8, '0')}',
@@ -1066,7 +1092,23 @@ class NodeApp extends ChangeNotifier {
     messages.add(msg);
     final x = _OutXfer(xfer, chunks, msg, s);
     _outX[xfer] = x;
-    _sendChunks(x, settings.lrFileTwice ? fileSendOrder(chunks.length) : [for (var i = 0; i < chunks.length; i++) i]);
+    if (fast) {
+      // Ankündigung auf dem normalen Kanal, dann alles auf 2,4 GHz (einfach; Fehlendes kommt über die Rückmeldungen)
+      final cfg = file24Cfg(s);
+      x.fast = true;
+      s.send24 = true;
+      final offer = FileOffer(xfer, cfg.freqHz, cfg.bwHz, cfg.sf, cfg.cr, chunks.length, data.length).build();
+      msg.info = tr('kündige die Übertragung auf 2,4 GHz an …');
+      _enqueue(s, LrPacket.build(LrType.fileOffer, me, _newId(), _cut(settings.callsign.trim().toUpperCase(), 12), '', offer),
+          tr('Datei {0}: Ankündigung 2,4 GHz', [name]));
+      _enqueueAction(s, tr('Wechsel auf 2,4 GHz'), () async {
+        await Future<void>.delayed(const Duration(milliseconds: 1200)); // Empfänger stellen in der Zeit um
+        await _set24(s, cfg);
+      });
+      _sendChunks(x, [for (var i = 0; i < chunks.length; i++) i]);
+    } else {
+      _sendChunks(x, settings.lrFileTwice ? fileSendOrder(chunks.length) : [for (var i = 0; i < chunks.length; i++) i]);
+    }
     _scheduleSave();
     notifyListeners();
     return null;
@@ -1085,7 +1127,7 @@ class NodeApp extends ChangeNotifier {
         left--;
         if (left == 0) _awaitFileAck(x);
         notifyListeners();
-      });
+      }, x.fast ? 10 : 150);
     }
     x.msg.status = MsgStatus.pending;
   }
@@ -1094,12 +1136,13 @@ class NodeApp extends ChangeNotifier {
     x.timer?.cancel();
     x.msg.status = MsgStatus.sent;
     x.msg.info = tr('gesendet, warte auf Bestätigung …');
-    x.timer = Timer(const Duration(seconds: 8), () {
+    x.timer = Timer(Duration(seconds: x.fast ? 2 : 8), () {
       if (x.finished) return;
       if (x.probes >= 3) {
         x.finished = true;
         x.msg.info = x.ackedBy.isEmpty ? tr('keine Bestätigung') : tr('empfangen von {0}', [x.ackedBy.join(', ')]);
         _outX.remove(x.xfer);
+        if (x.fast) _endFast(x);
         _scheduleSave();
         notifyListeners();
         return;
@@ -1122,6 +1165,7 @@ class NodeApp extends ChangeNotifier {
       x.msg.info = tr('empfangen von {0}', [x.ackedBy.join(', ')]);
       x.finished = true;
       x.timer?.cancel();
+      if (x.fast) _endFast(x);
       _scheduleSave();
     } else if (a.missing.isNotEmpty && x.round < 8 + x.chunks.length ~/ 200) {
       // höchstens 90 fehlende Teile pro Rückmeldung: große Dateien brauchen mehr Runden
@@ -1131,6 +1175,102 @@ class NodeApp extends ChangeNotifier {
       _sendChunks(x, a.missing.where((i) => i < x.chunks.length).toList());
     }
     notifyListeners();
+  }
+
+  /// 2,4-GHz-Dateikanal für dieses Modul benutzen? (Einstellung an, echtes Modem, nicht schon dort)
+  bool _fast24(ModemSlot s) => settings.lrFile24 && s.kind != TransportKind.demo && !s.on24 && !s.send24;
+
+  /// 2425 MHz liegt im ISM-Band und im 13-cm-Amateurfunkband; SF5 mit 812,5 kHz: ein 200-Byte-Teil braucht ~20 ms.
+  static const file24Hz = 2425000000;
+  LoraCfg file24Cfg(ModemSlot s) {
+    final c = LoraCfg(freqHz: file24Hz, bwHz: 812500, sf: 5, cr: 5, sync: 0x12, powerDbm: 0, preamble: 12);
+    final lim = powerLimit(c.freqHz, bwHz: c.bwHz, licensed: settings.licensed);
+    c.powerDbm = lim.allowed ? lim.maxDbm : 0;
+    return c;
+  }
+
+  /// Modul auf den 2,4-GHz-Dateikanal ([cfg]) bzw. zurück in seine Betriebsart (cfg == null).
+  Future<void> _set24(ModemSlot s, LoraCfg? cfg) async {
+    final c = s.client;
+    if (c == null) return;
+    if (cfg == null) {
+      s._back24?.cancel();
+      if (!s.on24) return;
+      await applyMode(s);
+      _log(s.role, LogKind.info, tr('zurück auf dem normalen LR-Kanal'));
+      return;
+    }
+    final lim = s.config?.limits;
+    if (lim == null || !lim.allow24 || lim.maxPwr24 < cfg.powerDbm) {
+      await c.setLimits(Limits(
+          allowMask: (lim?.allowMask ?? 1) | 2,
+          maxPwrSub: lim?.maxPwrSub ?? chipMaxSubGhz,
+          maxPwr24: chipMax24,
+          dutyPermille: lim?.dutyPermille ?? 0));
+    }
+    // Quarzkorrektur gilt in ppm: auf 2,4 GHz entsprechend größer
+    final base = baseCfg(s, modeOf(s)).freqHz;
+    final t = cfg.copy()..freqHz = cfg.freqHz + (base > 0 ? (_corr(s) * cfg.freqHz / base).round() : 0);
+    try {
+      await c.setLora(t.copy()
+        ..freqHz = t.freqHz + 30000000
+        ..powerDbm = 0); // Frequenzsprung >= 20 MHz: Empfangsteil wird kalibriert
+    } catch (_) {}
+    await c.setLora(t);
+    await c.rxStart();
+    s.on24 = true;
+    try {
+      s.config = await c.config();
+    } catch (_) {}
+    _log(s.role, LogKind.info, tr('2,4-GHz-Dateikanal: {0}, {1} dBm', [t.summary, t.powerDbm]));
+    notifyListeners();
+  }
+
+  /// Empfänger: nach [seconds] ohne Pakete auf 2,4 GHz zurück auf den normalen Kanal.
+  void _touch24(ModemSlot s, {int seconds = 5}) {
+    s._back24?.cancel();
+    s._back24 = Timer(Duration(seconds: seconds), () {
+      if (s.on24 && !s.send24) _enqueueAction(s, tr('zurück auf den normalen LR-Kanal'), () => _set24(s, null));
+    });
+  }
+
+  /// Sender: Übertragung auf 2,4 GHz beendet – zurückschalten; hat dort niemand geantwortet, auf 70 cm senden.
+  void _endFast(_OutXfer x) {
+    final s = x.slot;
+    _enqueueAction(s, tr('zurück auf den normalen LR-Kanal'), () async {
+      s.send24 = false;
+      await _set24(s, null);
+    });
+    if (x.ackedBy.isEmpty && !x.fallback) {
+      x
+        ..fallback = true
+        ..fast = false
+        ..finished = false
+        ..round = 0
+        ..probes = 0;
+      x.sent.clear();
+      _outX[x.xfer] = x;
+      x.msg.info = tr('keine Antwort auf 2,4 GHz – sende auf 70 cm');
+      _sendChunks(x, settings.lrFileTwice ? fileSendOrder(x.chunks.length) : [for (var i = 0; i < x.chunks.length; i++) i]);
+    }
+  }
+
+  void _onFileOffer(ModemSlot s, LrPacket p, String key, String who) {
+    final o = FileOffer.parse(p.body);
+    if (o == null || _doneX.contains('$key:${o.xfer}')) return;
+    if (!settings.lrFile24 || s.kind == TransportKind.demo || s.send24) {
+      _log(s.role, LogKind.rx, tr('{0} sendet eine Datei auf 2,4 GHz – der 2,4-GHz-Dateikanal ist hier aus', [who]));
+      return;
+    }
+    if (o.freqHz < 2400000000 || o.freqHz > 2483500000 || !LoraCfg.bandwidths.contains(o.bwHz) || o.sf < 5 || o.sf > 12) {
+      return;
+    }
+    final cfg = LoraCfg(freqHz: o.freqHz, bwHz: o.bwHz, sf: o.sf, cr: o.cr.clamp(5, 8), sync: 0x12, powerDbm: 0, preamble: 12);
+    final lim = powerLimit(cfg.freqHz, bwHz: cfg.bwHz, licensed: settings.licensed);
+    cfg.powerDbm = lim.allowed ? lim.maxDbm : 0;
+    _log(s.role, LogKind.rx, tr('{0} sendet {1} Teile auf {2} MHz – wechsle dorthin', [who, o.count, (o.freqHz / 1e6).toStringAsFixed(1)]));
+    _enqueueAction(s, tr('Wechsel auf 2,4 GHz'), () => _set24(s, cfg));
+    _touch24(s, seconds: 8);
   }
 
   void _onFileChunk(ModemSlot s, LrPacket p, String key, String who, RxEvent e) {
@@ -1922,6 +2062,7 @@ class NodeApp extends ChangeNotifier {
     if (p.callsign.isNotEmpty) n.shortName = p.callsign;
     if (p.name.isNotEmpty) n.longName = '${p.callsign} · ${p.name}';
     final who = p.callsign.isNotEmpty ? p.callsign : key;
+    if (s.on24 && !s.send24) _touch24(s);
     switch (p.type) {
       case LrType.text:
         _log(s.role, LogKind.rx, '$who: »${p.text}«', _sig(e));
@@ -1964,6 +2105,9 @@ class NodeApp extends ChangeNotifier {
         break;
       case LrType.fileAck:
         _onFileAck(p, who);
+        break;
+      case LrType.fileOffer:
+        _onFileOffer(s, p, key, who);
         break;
     }
     _scheduleSave();
@@ -2059,6 +2203,7 @@ class _OutXfer {
   final List<String> ackedBy = [];
   int round = 0, probes = 0;
   bool finished = false;
+  bool fast = false, fallback = false; // 2,4-GHz-Dateikanal / danach auf 70 cm wiederholt
   Timer? timer;
   _OutXfer(this.xfer, this.chunks, this.msg, this.slot);
 }

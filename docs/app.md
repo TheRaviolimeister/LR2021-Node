@@ -49,7 +49,10 @@ connects to the node over Wi-Fi (“Network (Pi)”); USB connections are not av
 - **LR radio 70 cm:** own plain-text channel with callsign, automatic acknowledgement, **photos (camera
   or gallery), voice messages and files** up to 1 MB. Pictures in three sizes (480 / 800 / 1280 px) or
   the original, the dialog shows the airtime; voice messages AAC, up to 2 minutes (about 3 KB/s);
-  missing parts are requested selectively.
+  missing parts are requested selectively. Optionally files go over a **2.4 GHz file channel**
+  (2425 MHz, SF5, 812 kHz, about ten times faster, shorter range): the sender announces the file on
+  70 cm, both sides switch to 2.4 GHz for the transfer and come back afterwards; if nobody answers
+  there, the file is sent on 70 cm. Needs 2.4 GHz antennas and the setting on both sides.
 - **Nodes:** every station heard (Meshtastic, MeshCore, LR radio) with signal, hops, device, battery,
   position, distance; request node info, position and telemetry, trace route, favourites, ignore.
 - **Map:** topo, satellite, hybrid (aerial imagery with street names), street; save areas for offline

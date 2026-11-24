@@ -394,6 +394,16 @@ class _SettingsPageState extends State<SettingsPage> {
               _save();
             }),
           ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: Text(tr('Dateien über 2,4 GHz (schnell)')),
+            subtitle: Text(tr('Bilder und Dateien gehen auf 2425 MHz (SF5, 812 kHz) – etwa zehnmal schneller, aber mit kürzerer Reichweite. Braucht 2,4-GHz-Antennen, und die Empfänger müssen es auch eingeschaltet haben. Antwortet dort niemand, wird die Datei auf 70 cm gesendet.')),
+            value: st.lrFile24,
+            onChanged: (v) => setState(() {
+              st.lrFile24 = v;
+              _save();
+            }),
+          ),
           DropdownButtonFormField<int>(
             value: [0, 10, 30, 60].contains(st.lrBeaconMin) ? st.lrBeaconMin : 0,
             decoration: InputDecoration(labelText: tr('Bake mit Rufzeichen')),

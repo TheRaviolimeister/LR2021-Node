@@ -766,4 +766,16 @@ const Map<String, String> enTexts = {
   'Mittel': 'Medium',
   'Groß': 'Large',
   'Original': 'Original',
+  'Dateien über 2,4 GHz (schnell)': 'Files over 2.4 GHz (fast)',
+  'Bilder und Dateien gehen auf 2425 MHz (SF5, 812 kHz) – etwa zehnmal schneller, aber mit kürzerer Reichweite. Braucht 2,4-GHz-Antennen, und die Empfänger müssen es auch eingeschaltet haben. Antwortet dort niemand, wird die Datei auf 70 cm gesendet.':
+      'Pictures and files go out on 2425 MHz (SF5, 812 kHz) – about ten times faster, but with a shorter range. Needs 2.4 GHz antennas, and the receivers must have it switched on too. If nobody answers there, the file is sent on 70 cm.',
+  'kündige die Übertragung auf 2,4 GHz an …': 'announcing the transfer on 2.4 GHz …',
+  'Datei {0}: Ankündigung 2,4 GHz': 'File {0}: 2.4 GHz announcement',
+  'Wechsel auf 2,4 GHz': 'Switching to 2.4 GHz',
+  'zurück auf dem normalen LR-Kanal': 'back on the normal LR channel',
+  'zurück auf den normalen LR-Kanal': 'back to the normal LR channel',
+  '2,4-GHz-Dateikanal: {0}, {1} dBm': '2.4 GHz file channel: {0}, {1} dBm',
+  'keine Antwort auf 2,4 GHz – sende auf 70 cm': 'no answer on 2.4 GHz – sending on 70 cm',
+  '{0} sendet eine Datei auf 2,4 GHz – der 2,4-GHz-Dateikanal ist hier aus': '{0} is sending a file on 2.4 GHz – the 2.4 GHz file channel is off here',
+  '{0} sendet {1} Teile auf {2} MHz – wechsle dorthin': '{0} is sending {1} parts on {2} MHz – switching there',
 };

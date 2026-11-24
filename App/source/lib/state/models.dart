@@ -72,6 +72,7 @@ class Settings {
   LoraCfg manualB = LoraCfg(freqHz: 433875000, bwHz: 125000, sf: 9, cr: 5, sync: 0x12, powerDbm: 10, preamble: 8);
   bool lrAutoAck = true;
   bool lrFileTwice = true; // Dateiteile zweimal senden (zeitversetzt)
+  bool lrFile24 = false; // Dateien über den 2,4-GHz-Kanal (Antennen nötig, Gegenstelle muss es auch eingeschaltet haben)
   int lrBeaconMin = 0;
   int theme = 2; // 0 System, 1 hell, 2 dunkel
   String mapLayer = 'topo';
@@ -128,6 +129,7 @@ class Settings {
         'manB': loraToJson(manualB),
         'lrAck': lrAutoAck,
         'lrFile2': lrFileTwice,
+        'lrFile24': lrFile24,
         'lrBeacon': lrBeaconMin,
         'theme': theme,
         'mapLayer': mapLayer,
@@ -196,6 +198,7 @@ class Settings {
     lrAutoAck = j['lrAck'] as bool? ?? true;
     lrBeaconMin = j['lrBeacon'] as int? ?? 0;
     lrFileTwice = j['lrFile2'] as bool? ?? true;
+    lrFile24 = j['lrFile24'] as bool? ?? false;
     theme = j['theme'] as int? ?? 2;
     mapLayer = j['mapLayer'] as String? ?? mapLayer;
     mapOffline = j['mapOff'] as bool? ?? false;

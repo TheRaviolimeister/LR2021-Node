@@ -6,12 +6,13 @@ import '../core/bytes.dart';
 /// Eigenes, einfaches Protokoll für den 70-cm-Kanal (unverschlüsselt, mit Rufzeichen –
 /// im Amateurfunk ist Verschlüsselung nicht erlaubt).
 ///
-///   'L' 'R' | ver=1 | typ (1 Text, 2 Bake, 3 Bestätigung, 4 Dateistück, 5 Datei-Bestätigung) | absender u32 | id u32
+///   'L' 'R' | ver=1 | typ (1 Text, 2 Bake, 3 Bestätigung, 4 Dateistück, 5 Datei-Bestätigung, 6 Datei-Ankündigung)
+///   | absender u32 | id u32
 ///   | rufz_len u8 | rufzeichen | name_len u8 | name | nutzdaten
 const int lrVersion = 1;
 
 class LrType {
-  static const text = 1, beacon = 2, ack = 3, file = 4, fileAck = 5;
+  static const text = 1, beacon = 2, ack = 3, file = 4, fileAck = 5, fileOffer = 6;
 }
 
 class LrPacket {

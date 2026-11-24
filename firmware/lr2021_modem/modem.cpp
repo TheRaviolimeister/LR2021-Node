@@ -824,12 +824,15 @@ void Modem::loop() {
   }
   // Zusätzliche Abfrage per SPI:
   //  - Empfang: Status alle 50 ms abfragen.
-  //  - Senden: erst nach Ablauf der berechneten Sendezeit (vorher reicht die ISR; Störimpulse werden
-  //    in handleIrq anhand der echten Flags aussortiert).
+  //  - Senden: ab Ablauf der berechneten Sendezeit alle 2 ms (vorher reicht die ISR; Störimpulse werden
+  //    in handleIrq anhand der echten Flags aussortiert). Nach einem Fehl-IRQ bleibt die Leitung oft HIGH,
+  //    dann kommt für TX_DONE keine Flanke mehr – die Abfrage meldet das Ende sonst erst bis zu 80 ms später,
+  //    was bei kurzen Paketen (2,4 GHz, SF5) den Durchsatz drittelt.
   static uint32_t lastPoll = 0;
   static bool irqWarned = false;
-  bool txPollOk = (rs_ == RS_TX) && (millis() - txStart_ >= txToaUs_ / 1000 + 30);
-  if (!pending && (rs_ == RS_RX || txPollOk) && millis() - lastPoll >= 50) {
+  bool txPollOk = (rs_ == RS_TX) && (millis() - txStart_ >= txToaUs_ / 1000);
+  uint32_t pollMs = (rs_ == RS_TX) ? 2 : 50;
+  if (!pending && (rs_ == RS_RX || txPollOk) && millis() - lastPoll >= pollMs) {
     lastPoll = millis();
     uint32_t f = radio.getIrqFlags();
     if (f != 0xFFFFFFFFUL &&

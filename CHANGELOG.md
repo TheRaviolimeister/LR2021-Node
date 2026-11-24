@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.7.3
+
+- App: new setting "Files over 2.4 GHz (fast)" (Settings → LR radio 70 cm, off by default): pictures and
+  files go out on 2425 MHz with SF5 / 812 kHz – a 15 KB photo takes seconds instead of minutes. The file is
+  announced on 70 cm, receivers with the setting switch to 2.4 GHz and return after the transfer; if nobody
+  answers there, it is sent on 70 cm as before. Needs 2.4 GHz antennas on both nodes
+- ESP32 firmware 1.2.1: the end of a transmission is reported right after the airtime instead of up to
+  80 ms later (matters for short packets, for example on 2.4 GHz)
+
 ## 1.7.2
 
 - App: every part of a file or picture is sent twice over LR radio (the second copy eight parts later,

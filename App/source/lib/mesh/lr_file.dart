@@ -12,6 +12,7 @@ import '../core/bytes.dart';
 /// Der Sender schickt alle Stücke, die Empfänger melden danach, was fehlt; nur das wird wiederholt.
 class LrFileProto {
   static const chunkSize = 180;
+  static const chunkSize24 = 200; // auf dem 2,4-GHz-Kanal (Paket bleibt auch mit 12 Zeichen Rufzeichen unter 255 B)
   static const maxMissingPerAck = 90;
 }
 
@@ -58,12 +59,12 @@ class FileChunk {
   }
 
   /// Daten in Stücke teilen (Stück 0 ist kürzer, weil Name und Typ mitgehen).
-  static List<Uint8List> split(Uint8List data, String mime, String name, int xfer) {
-    final first = (LrFileProto.chunkSize - 2 - utf8.encode(mime).length - utf8.encode(name).length).clamp(40, LrFileProto.chunkSize);
+  static List<Uint8List> split(Uint8List data, String mime, String name, int xfer, {int size = LrFileProto.chunkSize}) {
+    final first = (size - 2 - utf8.encode(mime).length - utf8.encode(name).length).clamp(40, size);
     final pieces = <List<int>>[];
     pieces.add(data.sublist(0, data.length < first ? data.length : first));
-    for (var o = pieces.first.length; o < data.length; o += LrFileProto.chunkSize) {
-      pieces.add(data.sublist(o, o + LrFileProto.chunkSize > data.length ? data.length : o + LrFileProto.chunkSize));
+    for (var o = pieces.first.length; o < data.length; o += size) {
+      pieces.add(data.sublist(o, o + size > data.length ? data.length : o + size));
     }
     final count = pieces.length;
     return [
@@ -100,6 +101,34 @@ class FileAck {
       w.u16(i);
     }
     return w.toBytes();
+  }
+}
+
+/// Ankündigung (Typ 6, auf dem normalen LR-Kanal): die Datei [xfer] folgt gleich auf einem schnellen Kanal.
+///   xfer u32 | frequenz u32 | bandbreite u32 | sf u8 | cr u8 | anzahl u16 | gesamtgröße u32
+/// Empfänger mit eingeschaltetem 2,4-GHz-Dateikanal wechseln dorthin und kommen nach einigen Sekunden Ruhe zurück.
+/// Kommt dort keine Bestätigung, sendet der Absender die Datei auf dem normalen Kanal.
+class FileOffer {
+  final int xfer, freqHz, bwHz, sf, cr, count, size;
+  FileOffer(this.xfer, this.freqHz, this.bwHz, this.sf, this.cr, this.count, this.size);
+
+  Uint8List build() => (Wr()
+        ..u32(xfer)
+        ..u32(freqHz)
+        ..u32(bwHz)
+        ..u8(sf)
+        ..u8(cr)
+        ..u16(count)
+        ..u32(size))
+      .toBytes();
+
+  static FileOffer? parse(Uint8List body) {
+    try {
+      final r = Rd(body);
+      return FileOffer(r.u32(), r.u32(), r.u32(), r.u8(), r.u8(), r.u16(), r.u32());
+    } catch (_) {
+      return null;
+    }
   }
 }
 
