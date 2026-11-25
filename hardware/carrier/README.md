@@ -184,6 +184,17 @@ sockets on the module are fitted. Check it with a multimeter: pin 16 to the cent
 LoRa IPEX socket, and pin 1 to the centre contact of the 2.4 GHz socket, must read about 0 Ω. If
 not, bridge R2/R3 with a 0402 0 Ω resistor or a solder bridge. Leave the IPEX sockets empty.
 
+- R2 and R3 have no outline in the silkscreen; the two small pads sit right next to the IPEX
+  sockets, beside the printed "R2"/"R3". If the IPEX sockets are not needed, removing them with hot
+  air (small nozzle, low air flow, neighbouring parts covered with Kapton tape) makes the pads much
+  easier to reach; the empty IPEX pads do not matter at these frequencies.
+- On the **Core2021-HF**, pin 16 reads as a short to GND once R3 is bridged: a 22 nH shunt inductor
+  (L11) sits on the LoRa line. That is normal. The Core2021-LF has no such inductor (and a series
+  capacitor), and the 2.4 GHz lines of both modules have none, so these pins must *not* read as a
+  short to GND.
+- Effect measured on the perfboard prototype after bridging: about +52 dB on the 2.4 GHz link
+  between the two modules, about +39 dB at 433 MHz and about +25 dB at 868 MHz.
+
 ## Ordering (e.g. JLCPCB)
 
 1. Upload `fabrication/lr2021-carrier-gerber.zip`. Settings: 2 layers, **1.6 mm**, 1 oz copper,

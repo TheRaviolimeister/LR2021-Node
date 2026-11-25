@@ -27,6 +27,8 @@ the names are chosen so you can search for them directly.
 The carrier board has four SMA connectors (90°) on its top edge. On a perfboard build, connect the
 antennas to the IPEX sockets of the modules with pigtails, or wire the module pins as described in
 [hardware/carrier](../../hardware/carrier/README.md#radio-modules-antenna-signal-on-the-pins).
+Wired to the pins, the modules need the 0 Ω bridges R2/R3 (see there); without them almost no signal
+reaches the antenna.
 
 **Never transmit without an antenna.** The firmware only transmits on command; the 2.4 GHz bands are
 locked by default.
