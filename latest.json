@@ -1,0 +1,43 @@
+{
+ "version": "1.7.7",
+ "page": "https://github.com/TheRaviolimeister/LR2021-Node/releases/tag/v1.7.7",
+ "notes": "\n- App: connecting over the node, ESP32 B was started twice at the same time (once automatically with A,\n  once by \"Connect node\"); the second attempt closed the channel of the first and both failed with\n  \"Modem does not answer\". Fixed, and a failed connection over the node is retried by itself\n- App: while a modem is being configured nothing is sent, and \"busy\" (a packet still on air) is retried \u2013\n  before, ESP32 A could stay on the calibration frequency 30 MHz above the channel\n\n",
+ "assets": {
+  "LR2021-Modem-A.bin": {
+   "size": 516336,
+   "sha256": "3517cb96c2e43c7a3f3673aa267f1d069d3ac9140746441a54774e2860073f6c"
+  },
+  "LR2021-Modem-B.bin": {
+   "size": 515904,
+   "sha256": "b1113969352fd78dad50ff0d132d49a84ca99892b75d133a539a541a2d621869"
+  },
+  "LR2021-Node-android.apk": {
+   "size": 62502395,
+   "sha256": "11c60ee8866eb01c3d69b1f3fbeb4579b9a118533cbbe43171bd5208092d419f"
+  },
+  "LR2021-Node-ios.ipa": {
+   "size": 9845919,
+   "sha256": "6e6443cf334bd2500a2cf4c0ff9981543b6a2608477c55b8eb5881d4239b01a3"
+  },
+  "LR2021-Node-linux-x64.tar.gz": {
+   "size": 11304461,
+   "sha256": "aa4b56c76b26b8e8c2e10854572ad451623e042b090adb36bb83242f444abbf7"
+  },
+  "LR2021-Node-update-1.7.7.tar.gz": {
+   "size": 50414,
+   "sha256": "49d02ba4b35304cf15aa7f5f5728a4bf832c32a59b7f9bcfe33a6e45c11875c0"
+  },
+  "LR2021-Node-windows-x64.zip": {
+   "size": 13880021,
+   "sha256": "ff7afdf6b2681e6f665751d8d421f6f9fabb6dc3f0ff030ffad2385ba7c64d2a"
+  },
+  "SHA256SUMS.txt": {
+   "size": 720,
+   "sha256": "fdce63a0382e8e24d5ca43485cb19aebcf22a7a3727899330a67a852bb6937fa"
+  },
+  "altstore-source.json": {
+   "size": 1112,
+   "sha256": "c0f2ec0e54b0e5df10d5dfa591832f956160c9b669a9f377a99f9cefc6185225"
+  }
+ }
+}
