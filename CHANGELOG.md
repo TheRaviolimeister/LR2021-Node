@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.7.4
+
+- ESP32 firmware 1.2.2: new sub-GHz PA settings. 16–22 dBm use Semtech's recommended values (LR20xx
+  datasheet, 915 MHz and 490 MHz tables), lower levels the 16 dBm setting with reduced drive. Before,
+  low settings came out about 5 dB too strong and the output flattened out above about 12 dBm, so
+  16–22 dBm delivered hardly more. Now the output follows the setting over the whole range (measured on
+  868 and 433 MHz); on 433 MHz the maximum is about 21 dBm
+
 ## 1.7.3
 
 - App: new setting "Files over 2.4 GHz (fast)" (Settings → LR radio 70 cm, off by default): pictures and

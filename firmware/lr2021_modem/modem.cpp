@@ -10,6 +10,31 @@ static LR2021 radio = new Module(PIN_LR_CS, PIN_LR_IRQ, PIN_LR_RST, PIN_LR_BUSY,
                                  SPISettings(LR_SPI_HZ, MSBFIRST, SPI_MODE0));
 static volatile bool g_irq = false;
 
+// Sub-GHz-PA-Einstellungen (Index = dBm + 9, Werte: duty_cycle, slices, tx_power in 0,5 dB).
+// 16..22 dBm nach Semtech-Datenblatt LR20xx Rev. 2.1, Tabelle 7-16 (915 MHz) bzw. 7-17 (490 MHz, Zwischenwerte
+// interpoliert). Darunter die PA-Einstellung der 16-dBm-Zeile mit 1 dB weniger tx_power je dBm – auf dem Core2021
+// gemessen linear. Die RadioLib-Standardtabelle lieferte unten rund 5 dB zu viel und sättigte ab ~12 dBm.
+static LR2021PaTableEntry_t g_paTable915[RADIOLIB_LR2021_PA_TABLE_LEN];
+static LR2021PaTableEntry_t g_paTable490[RADIOLIB_LR2021_PA_TABLE_LEN];
+
+static void buildPaTables() {
+  static const LR2021PaTableEntry_t top915[7] = {   // 16..22 dBm
+    { 4, 4, 36 }, { 5, 6, 36 }, { 5, 6, 38 }, { 6, 6, 39 }, { 6, 6, 41 }, { 7, 7, 42 }, { 7, 6, 44 } };
+  static const LR2021PaTableEntry_t top490[7] = {
+    { 7, 7, 33 }, { 7, 7, 35 }, { 7, 7, 37 }, { 7, 7, 40 }, { 7, 7, 42 }, { 7, 7, 44 }, { 7, 7, 44 } };
+  for (int i = 0; i < RADIOLIB_LR2021_PA_TABLE_LEN; i++) {
+    int dbm = i + RADIOLIB_LR2021_LF_POUT_MIN;
+    if (dbm >= 16) {
+      g_paTable915[i] = top915[dbm - 16];
+      g_paTable490[i] = top490[dbm - 16];
+    } else {
+      int d = 2 * (16 - dbm);
+      g_paTable915[i] = { 4, 4, (int8_t)(36 - d) };
+      g_paTable490[i] = { 7, 7, (int8_t)(33 - d) };
+    }
+  }
+}
+
 static void IRAM_ATTR onRadioIrq() { g_irq = true; }
 static uint32_t g_cadTimeoutMs = CAD_TIMEOUT_MS;   // wird je nach LoRa-Einstellung verlängert
 static uint32_t g_cadMinMs = 2;                     // frühestens dann per SPI nach "CAD fertig" fragen
@@ -340,6 +365,12 @@ int16_t Modem::applyConfig(int16_t* rc) {
   g_irq = false;
   // RadioLib beendet SPI, wenn der Chip nicht gefunden wurde -> hier immer mit unseren Pins starten
   lrSpi.begin(PIN_LR_SCK, PIN_LR_MISO, PIN_LR_MOSI, -1);
+  {
+    uint32_t fHz = (modem_ == MODEM_FSK) ? fsk_.freq_hz : lora_.freq_hz;
+    static bool built = false;
+    if (!built) { buildPaTables(); built = true; }
+    radio.setPaTable(fHz < 600000000UL ? g_paTable490 : g_paTable915, false);
+  }
   if (modem_ == MODEM_FSK) {
     ConfigFSK_t c;
     c.frequency = fsk_.freq_hz;
