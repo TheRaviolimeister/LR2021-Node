@@ -1,7 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lr2021_app/core/modem.dart';
 import 'package:lr2021_app/core/regulatory.dart';
 import 'package:lr2021_app/geo/nmea.dart';
 import 'package:lr2021_app/mesh/meshtastic.dart';
+import 'package:lr2021_app/state/models.dart';
 
 void main() {
   test('NMEA GGA', () {
@@ -27,5 +29,18 @@ void main() {
     expect(powerLimit(869525000, bwHz: 250000, licensed: true).maxDbm, 22);
     expect(powerLimit(435000000, licensed: false).allowed, isFalse);
     expect(powerLimit(433875000, bwHz: 125000, licensed: false, antennaGainDbi: 5.15).maxDbm, 7);
+    // LR-Funk-Standardkanal liegt im lizenzfreien Teil (10 dBm) und im 70-cm-Band (mit Lizenz voll)
+    expect(powerLimit(433650000, bwHz: 125000, licensed: false).maxDbm, 10);
+    expect(powerLimit(433650000, bwHz: 125000, licensed: true).maxDbm, 22);
+  });
+
+  test('LR-Funk-Standardkanal 433,650 MHz, alter Standard wird einmal umgestellt', () {
+    expect(Settings().lrCfg.freqHz, 433650000);
+    final old = loraToJson(LoraCfg(freqHz: 433875000, bwHz: 125000, sf: 9, cr: 5, sync: 0x12, powerDbm: 10, preamble: 8));
+    expect((Settings()..load({'lr': old})).lrCfg.freqHz, 433650000);
+    // nach der Umstellung bleibt eine bewusst gewählte 433,875 MHz erhalten
+    expect((Settings()..load({'lr': old, 'lrMig': 1})).lrCfg.freqHz, 433875000);
+    final own = loraToJson(LoraCfg(freqHz: 434400000, bwHz: 125000, sf: 9, cr: 5, sync: 0x12, powerDbm: 10, preamble: 8));
+    expect((Settings()..load({'lr': own})).lrCfg.freqHz, 434400000);
   });
 }

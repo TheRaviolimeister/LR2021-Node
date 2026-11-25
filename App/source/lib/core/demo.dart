@@ -49,7 +49,7 @@ class DemoTransport implements Transport {
   DemoTransport(this.role) {
     _cfg = role == 'A'
         ? LoraCfg(freqHz: 869525000, bwHz: 250000, sf: 11, cr: 5, sync: 0x2B, powerDbm: 14, preamble: 16)
-        : LoraCfg(freqHz: 433875000, bwHz: 125000, sf: 9, cr: 5, sync: 0x12, powerDbm: 10, preamble: 8);
+        : LoraCfg(freqHz: 433650000, bwHz: 125000, sf: 9, cr: 5, sync: 0x12, powerDbm: 10, preamble: 8);
     Timer(const Duration(milliseconds: 300), () => _event(Evt.boot, _infoBlock()));
     _scheduleTraffic();
   }

@@ -46,7 +46,8 @@ connects to the node over Wi-Fi (“Network (Pi)”); USB connections are not av
   (Meshtastic PKI), delivery confirmation, quick messages, SOS with position (MGRS). The paperclip
   sends your position from the node's GPS into any chat (MGRS and degrees; on Meshtastic also as a
   position packet).
-- **LR radio 70 cm:** own plain-text channel with callsign, automatic acknowledgement, **photos (camera
+- **LR radio 70 cm:** own plain-text channel with callsign (default 433.650 MHz, 125 kHz, SF9 – away from
+  the licence-free devices on 433.92 MHz and from LoRa APRS), automatic acknowledgement, **photos (camera
   or gallery), voice messages and files** up to 1 MB. Pictures in three sizes (480 / 800 / 1280 px) or
   the original, the dialog shows the airtime; voice messages AAC, up to 2 minutes (about 3 KB/s);
   missing parts are requested selectively. A file is announced three times before it is sent and goes

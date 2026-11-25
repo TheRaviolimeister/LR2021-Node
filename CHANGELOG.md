@@ -17,6 +17,11 @@
     later instead of being lost
   - Both can be switched under Settings → LR radio 70 cm ("Announce files and send them loud", "Wait
     for a free channel when sending files"), both on by default
+- App: the LR radio channel moves from 433.875 MHz to **433.650 MHz** (125 kHz). It lies in the digital
+  segment of the IARU band plan, away from the licence-free devices on 433.92 MHz and below LoRa APRS
+  (433.775 MHz); an occupancy scan of 430–440 MHz found it free. Apps that still use the old default
+  switch over once by themselves; a frequency you set yourself stays. Update every node, otherwise old
+  and new versions do not hear each other on LR radio (Meshtastic EU_433 stays on 433.875 MHz)
 
 ## 1.7.4
 

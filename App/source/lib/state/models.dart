@@ -67,7 +67,10 @@ class Settings {
   String piHost = '10.42.0.1';
   RadioMode modeA = RadioMode.meshtastic;
   RadioMode modeB = RadioMode.lrfunk;
-  LoraCfg lrCfg = LoraCfg(freqHz: 433875000, bwHz: 125000, sf: 9, cr: 5, sync: 0x12, powerDbm: 10, preamble: 8);
+  /// LR-Funk-Standardkanal: 433,650 MHz liegt im Digitalbereich des IARU-Bandplans, weit weg von den lizenzfreien
+  /// Geräten auf 433,92 MHz und unter LoRa-APRS (433,775 MHz); bis 1.7.4 war es 433,875 MHz (wie Meshtastic EU_433).
+  static const lrDefaultHz = 433650000;
+  LoraCfg lrCfg = LoraCfg(freqHz: lrDefaultHz, bwHz: 125000, sf: 9, cr: 5, sync: 0x12, powerDbm: 10, preamble: 8);
   LoraCfg manualA = LoraCfg(freqHz: 869525000, bwHz: 125000, sf: 9, cr: 5, sync: 0x12, powerDbm: 10, preamble: 8);
   LoraCfg manualB = LoraCfg(freqHz: 433875000, bwHz: 125000, sf: 9, cr: 5, sync: 0x12, powerDbm: 10, preamble: 8);
   bool lrAutoAck = true;
@@ -127,6 +130,7 @@ class Settings {
         'modeA': modeA.name,
         'modeB': modeB.name,
         'lr': loraToJson(lrCfg),
+        'lrMig': 1,
         'manA': loraToJson(manualA),
         'manB': loraToJson(manualB),
         'lrAck': lrAutoAck,
@@ -197,6 +201,8 @@ class Settings {
     modeA = _modeFrom(j['modeA'], modeA);
     modeB = _modeFrom(j['modeB'], modeB);
     lrCfg = loraFromJson(j['lr'], lrCfg);
+    // einmalig: alter Standardkanal 433,875 MHz -> neuer Standard (eine bewusst eingestellte Frequenz bleibt)
+    if (j['lrMig'] != 1 && lrCfg.freqHz == 433875000) lrCfg.freqHz = lrDefaultHz;
     manualA = loraFromJson(j['manA'], manualA);
     manualB = loraFromJson(j['manB'], manualB);
     lrAutoAck = j['lrAck'] as bool? ?? true;
