@@ -8,6 +8,7 @@ import '../mesh/meshtastic.dart';
 import '../state/app.dart';
 import '../state/app_state.dart';
 import '../state/models.dart';
+import 'scan_dialog.dart';
 import 'theme.dart';
 import 'widgets.dart';
 import '../i18n.dart';
@@ -105,20 +106,25 @@ class _ConnectBox extends StatelessWidget {
     return Section(
       title: tr('Verbindung'),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        SegmentedButton<TransportKind>(
-          segments: [
-            for (final k in availableTransportKinds) ButtonSegment(value: k, label: Text(transportKindName(k))),
-          ],
-          selected: {s.kind},
-          showSelectedIcon: false,
-          onSelectionChanged: (v) {
-            s.kind = v.first;
-            if (s.kind == TransportKind.usb || s.kind == TransportKind.node) app.refreshPorts(s);
-            app.changed();
-          },
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: SegmentedButton<TransportKind>(
+            segments: [
+              for (final k in availableTransportKinds) ButtonSegment(value: k, label: Text(transportKindName(k))),
+            ],
+            selected: {s.kind},
+            showSelectedIcon: false,
+            onSelectionChanged: (v) {
+              s.kind = v.first;
+              if (s.kind == TransportKind.usb || s.kind == TransportKind.node || s.kind == TransportKind.bluetooth) {
+                app.refreshPorts(s);
+              }
+              app.changed();
+            },
+          ),
         ),
         const SizedBox(height: 12),
-        if (s.kind == TransportKind.usb || s.kind == TransportKind.node)
+        if (s.kind == TransportKind.usb || s.kind == TransportKind.node || s.kind == TransportKind.bluetooth)
           Row(children: [
             Expanded(
               child: DropdownButtonFormField<String>(
@@ -129,7 +135,7 @@ class _ConnectBox extends StatelessWidget {
                   for (final p in s.ports)
                     DropdownMenuItem(
                       value: p.id,
-                      child: Text('${(s.kind == TransportKind.node ? p.cp210x : p.looksLikeEsp) ? '● ' : ''}${p.label}',
+                      child: Text('${(s.kind == TransportKind.usb ? p.looksLikeEsp : p.cp210x) ? '● ' : ''}${p.label}',
                           overflow: TextOverflow.ellipsis),
                     ),
                 ],
@@ -155,6 +161,14 @@ class _ConnectBox extends StatelessWidget {
             padding: const EdgeInsets.only(top: 8),
             child: Text(
               tr('Kabel vom PC zur Konsole der Node (USB-C „USB CONSOLE“ auf der Trägerplatine oder CP2102-Modul). Die App meldet sich an der Node an (Benutzer/Passwort unter Einstellungen → Verbindung) und verbindet ESP32 A und B zusammen, dazu das GPS der Node. Kein Konsolen-Programm (PuTTY, Skript) darf den Anschluss gleichzeitig offen haben.'),
+              style: TextStyle(color: rc.muted, fontSize: 12.5),
+            ),
+          ),
+        if (s.kind == TransportKind.bluetooth)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(
+              tr('Die Node einmal in den Bluetooth-Einstellungen des Handys koppeln („LR2021-…“, ohne PIN), dann hier auswählen. Über die eine Verbindung laufen ESP32 A und B, das GPS und das Postfach der Node – WLAN und mobile Daten des Handys bleiben frei.'),
               style: TextStyle(color: rc.muted, fontSize: 12.5),
             ),
           ),
@@ -287,6 +301,19 @@ class _ModeBoxState extends State<_ModeBox> {
           const SizedBox(height: 6),
           Text(tr('Klartext mit Rufzeichen. Alle Stationen im eigenen Netz brauchen dieselben Werte.'),
               style: TextStyle(color: rc.muted, fontSize: 12)),
+          const SizedBox(height: 8),
+          Wrap(spacing: 8, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center, children: [
+            OutlinedButton.icon(
+              onPressed: () => showScanDialog(context),
+              icon: Icon(app.scanRunning ? Icons.radar : Icons.travel_explore, size: 18),
+              label: Text(app.scanRunning ? tr('Frequenzsuche läuft …') : tr('Ruhigste Frequenz suchen')),
+            ),
+            Text(
+                app.boxActive
+                    ? tr('Postfach der Node verbunden – sie empfängt und sendet auch ohne Handy')
+                    : tr('Postfach der Node nicht verbunden'),
+                style: TextStyle(color: app.boxActive ? rc.ok : rc.muted, fontSize: 12)),
+          ]),
         ],
         if (mode == RadioMode.lrfunk && s.role == 'A')
           Text(tr('LR-Funk-Test auf 869,525 MHz · 125 kHz · SF9.'), style: TextStyle(color: rc.muted, fontSize: 12.5)),

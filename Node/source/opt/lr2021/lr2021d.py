@@ -4,7 +4,10 @@ lr2021d – der Dienst auf dem Orange Pi der LR2021 Node.
 
   * findet beide ESP32-Modems (USB oder UART) und erkennt per GET_INFO, welches A und welches B ist
   * stellt sie bereit: TCP 2021 (A, HF 868), 2022 (B, LF 433), GPS-NMEA auf 2023
-  * dieselben Kanäle per Bluetooth (serielle Verbindung, RFCOMM-Kanal 1/2/3)
+  * Bluetooth: Sammelkanal RFCOMM 5 (als serielle Standard-Schnittstelle angemeldet) mit allem über eine
+    Verbindung (wie das Node-Kabel, siehe serialbridge.py); einzeln weiterhin RFCOMM 1/2/3
+  * Postfach (postbox.py): speichert alles Empfangene, sendet Dateiaufträge weiter, wenn das Handy weg ist,
+    sucht die ruhigste Frequenz; Steuerkanal TCP 2024
   * Web-Oberfläche auf Port 80: Status, WLAN, Passwort, Update der Node und der ESP32
     (ESP32 über die Modem-Verbindung, ab Firmware 1.2.0; esptool nur für einen per USB angeschlossenen ESP32)
 
@@ -32,8 +35,10 @@ from urllib.parse import urlparse
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 from lrmodem import build_frame, parse_frame, open_port, LrModem, load_firmware, OTA_MIN_VERSION  # noqa: E402
+from postbox import Mailbox  # noqa: E402
+from serialbridge import run_bridge  # noqa: E402
 
-VERSION = "1.1.1"
+VERSION = "1.2.0"
 CONF_PATH = "/etc/lr2021/node.json"
 STATE_DIR = "/var/lib/lr2021"
 INSTALL_DIR = "/opt/lr2021"
@@ -65,6 +70,9 @@ DEFAULTS = {
     "http_port": 80,
     "bluetooth": True,
     "bt_channels": {"A": 1, "B": 2, "GPS": 3},
+    "bt_mux_channel": 5,             # alles über eine Bluetooth-Verbindung (für die App)
+    "tcp_port_box": 2024,            # Steuerkanal des Postfachs
+    "mailbox": {},                   # Einstellungen des Postfachs (setzt die App)
 }
 
 log = logging.getLogger("lr2021d")
@@ -652,12 +660,46 @@ def bt_frontend(hub, target, channel):
             time.sleep(30)
 
 
+def bt_mux_frontend(channel):
+    """Bluetooth-Sammelkanal: je Verbindung eine Brücke (Modems, GPS, Postfach) wie über das Node-Kabel."""
+    if not hasattr(socket, "AF_BLUETOOTH"):
+        return
+    while True:
+        try:
+            srv = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_STREAM, socket.BTPROTO_RFCOMM)
+            srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            srv.bind((socket.BDADDR_ANY, channel))
+            srv.listen(2)
+            log.info("Bluetooth-Sammelkanal auf RFCOMM %d", channel)
+            while True:
+                conn, addr = srv.accept()
+                threading.Thread(target=_bt_mux_session, args=(conn, addr[0]), daemon=True).start()
+        except OSError as e:
+            log.warning("Bluetooth-Sammelkanal %d: %s – neuer Versuch in 30 s", channel, e)
+            time.sleep(30)
+
+
+def _bt_mux_session(conn, addr):
+    log.info("Bluetooth: App %s verbunden (Sammelkanal)", addr)
+    try:
+        run_bridge(conn, lambda: conn.recv(65536), conn.sendall, idle_s=120)
+    except OSError:
+        pass
+    finally:
+        try:
+            conn.close()
+        except OSError:
+            pass
+        log.info("Bluetooth: App %s getrennt", addr)
+
+
 class BtAgent:
     """Hält bluetoothctl als Pairing-Agent am Laufen: koppeln ohne PIN, Geräte vertrauen."""
 
-    def __init__(self, name, channels):
+    def __init__(self, name, channels, mux_channel=None):
         self.name = name
         self.channels = channels
+        self.mux_channel = mux_channel
         self.state = "aus"
 
     def run(self):
@@ -695,13 +737,19 @@ class BtAgent:
             time.sleep(10)
 
     def _register_sdp(self):
+        """Als serielle Standard-Schnittstelle (SPP) ist nur der Sammelkanal angemeldet: Handys verbinden sich per
+        SPP-Kennung und landen dort. Die Einzelkanäle bleiben über ihre Nummer erreichbar."""
         if not shutil.which("sdptool"):
             return
         rc, out = sh("sdptool", "browse", "local", timeout=10)
-        for name, ch in self.channels.items():
-            if "Channel: %d" % ch in out:
-                continue
-            sh("sdptool", "add", "--channel=%d" % ch, "SP", timeout=10)
+        want = self.mux_channel or min(self.channels.values())
+        for block in re.split(r"\n\s*\n", out):        # sdptool trennt die Einträge durch Leerzeilen
+            m_h = re.search(r"Service RecHandle:\s*(0x[0-9a-fA-F]+)", block)
+            m_c = re.search(r"Channel:\s*(\d+)", block)
+            if m_h and m_c and "Serial Port" in block and int(m_c.group(1)) != want:
+                sh("sdptool", "del", m_h.group(1), timeout=10)
+        if "Channel: %d" % want not in out:
+            sh("sdptool", "add", "--channel=%d" % want, "SP", timeout=10)
 
 
 # ============================================================== Web-Oberfläche
@@ -949,8 +997,9 @@ class App:
         self.hub = Hub(cfg)
         self.started = time.time()
         self.nid = node_id()
-        self.bt = BtAgent(self.name, cfg["bt_channels"])
+        self.bt = BtAgent(self.name, cfg["bt_channels"], cfg["bt_mux_channel"])
         self.last_action = ""
+        self.box = None
 
     @property
     def name(self):
@@ -999,6 +1048,7 @@ class App:
                      "heim_wlan": self.cfg["wlan_client_ssid"]},
             "usb": {"adresse": self.cfg["usb_ip"]},
             "bluetooth": self.bt.state,
+            "postfach": self.box.status() if self.box else None,
             "adressen": ip_addresses(),
             "letzte_aktion": self.last_action,
         }
@@ -1170,10 +1220,18 @@ class App:
         threading.Thread(target=self.hub.scan_loop, daemon=True).start()
         for target, key in (("A", "tcp_port_a"), ("B", "tcp_port_b"), ("GPS", "tcp_port_gps")):
             threading.Thread(target=tcp_frontend, args=(self.hub, target, self.cfg[key]), daemon=True).start()
+        try:
+            self.box = Mailbox(self.hub, self.cfg)
+            self.box.node_id = self.nid
+            self.box.start(self.cfg["tcp_port_box"])
+        except Exception:
+            log.exception("Postfach startet nicht")
         if self.cfg["bluetooth"]:
             threading.Thread(target=self.bt.run, daemon=True).start()
             for target, ch in self.cfg["bt_channels"].items():
                 threading.Thread(target=bt_frontend, args=(self.hub, target, int(ch)), daemon=True).start()
+            if self.cfg["bt_mux_channel"]:
+                threading.Thread(target=bt_mux_frontend, args=(int(self.cfg["bt_mux_channel"]),), daemon=True).start()
         if shutil.which("nmcli"):
             threading.Thread(target=self.start_wlan, daemon=True).start()
             threading.Thread(target=self.wlan_watchdog, daemon=True).start()

@@ -15,7 +15,7 @@ two radio modems, the GPS, Wi-Fi, Bluetooth and USB and makes everything availab
 | Node Wi-Fi hotspot | `10.42.0.1` | network `LR2021-xxxx`, password `lr2021node` |
 | Home Wi-Fi | via mDNS `lr2021-xxxx.local` | enter it in the web interface |
 | USB-C to a PC (data cable) | `192.168.7.1` | network + serial console |
-| Bluetooth | `LR2021-xxxx` | serial channels 1 = ESP32 A, 2 = ESP32 B, 3 = GPS |
+| Bluetooth | `LR2021-xxxx`, no PIN | the app (Android) connects to the serial port profile (SPP): everything over one connection |
 | CP2102 (serial console) | COM port, 115200 | login console; the app uses it as “node cable” |
 
 ## Services and ports
@@ -27,9 +27,31 @@ two radio modems, the GPS, Wi-Fi, Bluetooth and USB and makes everything availab
 | 2021 | ESP32 A (HF 868) – modem protocol |
 | 2022 | ESP32 B (LF 433) – modem protocol |
 | 2023 | GPS (NMEA) |
+| 2024 | mailbox – control channel for the app (one JSON line per message) |
 
-Over the serial console the app starts `/opt/lr2021/serialbridge.py`. After that both modems and the
-GPS run over this one cable (frames `[channel][data]0x00`, channel 1 = A, 2 = B, 3 = GPS, 0x7F = control).
+Over the serial console the app starts `/opt/lr2021/serialbridge.py`. After that both modems, the GPS
+and the mailbox run over this one cable (frames `[channel][data]0x00`, channel 1 = A, 2 = B, 3 = GPS,
+4 = mailbox, 0x7F = control). Bluetooth RFCOMM channel 5 runs the same bridge without a login; it is
+the one registered as serial port (SPP), so phones end up there. Channels 1/2/3 (A, B, GPS on their
+own) can still be reached by number.
+
+## Mailbox (the node works without the phone)
+
+`/opt/lr2021/postbox.py`, part of `lr2021d` from version 1.2:
+
+- **Everything received is stored** (`/var/lib/lr2021/mailbox/rx.jsonl`, the last 5000 packets, Meshtastic
+  and LR radio). When the app connects – the first time or again after a break – it fetches what it
+  missed and shows it as if it had been there.
+- **LR radio without the phone:** the node acknowledges text messages, receives files completely (asks
+  for missing parts, confirms) and stores them in `/var/lib/lr2021/mailbox/files/`. It needs the
+  callsign, which the app hands over.
+- **Sending jobs:** a picture or file sent from the app over the node is stored on the node and sent by
+  it – announced three times, at the highest permitted power, resent until every receiver has it
+  complete, waiting while someone else transmits loudly on the channel. The phone can disconnect
+  meanwhile; unfinished jobs continue after a restart of the node.
+- **Quietest frequency:** the node scans a range (e.g. 430–440 MHz) with ESP32 B for a chosen time and
+  reports how often each 125 kHz channel was busy; the app shows the quietest ones and applies one.
+- After a restart of an ESP32 the node sets the radio values the app used last.
 
 ## Credentials (please change after the first start)
 

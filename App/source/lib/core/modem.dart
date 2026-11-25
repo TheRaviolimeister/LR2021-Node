@@ -280,7 +280,8 @@ class Stats {
 
 // ---------------------------------------------------------------- Ereignisse
 abstract class ModemEvent {
-  final DateTime at = DateTime.now();
+  final DateTime at;
+  ModemEvent([DateTime? at]) : at = at ?? DateTime.now();
 }
 
 class RxEvent extends ModemEvent {
@@ -288,7 +289,10 @@ class RxEvent extends ModemEvent {
   final int freqErr, timeMs;
   final bool crcError;
   final Uint8List data;
-  RxEvent(this.rssi, this.snr, this.freqErr, this.crcError, this.timeMs, this.data);
+  /// Aus dem Speicher der Node nachgeholt (empfangen, als die App nicht verbunden war): nur anzeigen, nicht antworten.
+  final bool replay;
+  RxEvent(this.rssi, this.snr, this.freqErr, this.crcError, this.timeMs, this.data, {DateTime? at, this.replay = false})
+      : super(at);
 }
 
 class TxDoneEvent extends ModemEvent {
@@ -424,7 +428,8 @@ class ModemClient {
 
   Future<Uint8List> request(int cmd, [List<int> payload = const [], Duration timeout = const Duration(seconds: 2)]) async {
     if (_closed) throw StateError(tr('nicht verbunden'));
-    _seq = (_seq + 1) & 0xFF;
+    // 1–127: die Node (Postfach) benutzt 128–255 am selben ESP32, so vermischen sich die Antworten nicht
+    _seq = _seq >= 127 ? 1 : _seq + 1;
     final key = ((cmd | 0x80) << 8) | _seq;
     final c = Completer<Uint8List>();
     _pending[key] = c;
@@ -484,7 +489,7 @@ class ModemClient {
 
   /// Paket in die Sendewarteschlange. Gibt die tx_id zurück.
   Future<int> tx(Uint8List data, {bool lbt = false, int? id}) async {
-    final tid = id ?? (_txId = (_txId + 1) & 0xFFFF);
+    final tid = id ?? (_txId = (_txId + 1) % 0xC000); // ab 0xC000 sendet die Node
     final w = Wr()
       ..u8(lbt ? 1 : 0)
       ..u16(tid)
@@ -495,7 +500,7 @@ class ModemClient {
 
   /// Senden und auf TX_DONE warten.
   Future<TxDoneEvent> txWait(Uint8List data, {bool lbt = false, Duration timeout = const Duration(seconds: 15)}) async {
-    _txId = (_txId + 1) & 0xFFFF;
+    _txId = (_txId + 1) % 0xC000;
     final tid = _txId;
     final fut = events
         .where((e) => e is TxDoneEvent && e.id == tid)

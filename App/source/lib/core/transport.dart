@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter_classic_bluetooth/flutter_classic_bluetooth.dart';
 import 'package:flutter_libserialport/flutter_libserialport.dart';
 import 'package:usb_serial/usb_serial.dart';
 import '../i18n.dart';
@@ -14,18 +15,76 @@ abstract class Transport {
   Future<void> close();
 }
 
-enum TransportKind { node, network, usb, demo }
+enum TransportKind { node, network, usb, demo, bluetooth }
 
-/// Verbindungsarten, die auf diesem System möglich sind (iOS hat keinen USB-Seriell-Zugriff).
-List<TransportKind> get availableTransportKinds =>
-    Platform.isIOS ? const [TransportKind.network, TransportKind.demo] : TransportKind.values;
+/// Verbindungsarten, die auf diesem System möglich sind (iOS hat keinen USB-Seriell-Zugriff,
+/// Bluetooth zur Node gibt es nur auf Android – iOS erlaubt serielles Bluetooth nur für MFi-Zubehör).
+List<TransportKind> get availableTransportKinds {
+  if (Platform.isIOS) return const [TransportKind.network, TransportKind.demo];
+  if (Platform.isAndroid) {
+    return const [TransportKind.bluetooth, TransportKind.network, TransportKind.node, TransportKind.usb, TransportKind.demo];
+  }
+  return const [TransportKind.node, TransportKind.network, TransportKind.usb, TransportKind.demo];
+}
 
 String transportKindName(TransportKind k) => switch (k) {
       TransportKind.node => 'Node-Kabel',
       TransportKind.usb => 'ESP32-USB',
       TransportKind.network => tr('Netzwerk (Pi)'),
       TransportKind.demo => tr('Demo'),
+      TransportKind.bluetooth => tr('Bluetooth (Node)'),
     };
+
+/// Verbindung läuft über die Node (Pi) – dann gibt es dort das Postfach, und beim Trennen bleibt das Modem
+/// auf Empfang.
+bool viaNode(TransportKind k) => k == TransportKind.node || k == TransportKind.network || k == TransportKind.bluetooth;
+
+// ---------------------------------------------------------------- Bluetooth (Android, zur Node)
+/// Gekoppelte Bluetooth-Geräte; Nodes („LR2021-…“) zuerst.
+Future<List<PortChoice>> listBtNodes() async {
+  if (!Platform.isAndroid) return const [];
+  final devs = await FlutterClassicBluetooth().getPairedDevices();
+  final out = [
+    for (final d in devs)
+      PortChoice(d.address, '${d.displayName}  ·  ${d.address}', cp210x: d.displayName.toUpperCase().startsWith('LR2021')),
+  ];
+  out.sort((a, b) => (b.cp210x ? 1 : 0) - (a.cp210x ? 1 : 0));
+  return out;
+}
+
+/// Serielle Bluetooth-Verbindung (SPP). Die Node meldet dort ihren Sammelkanal an.
+class BtTransport implements Transport {
+  final BtcConnection _c;
+  @override
+  final String label;
+  final StreamController<Uint8List> _ctrl = StreamController<Uint8List>.broadcast();
+  StreamSubscription<Uint8List>? _sub;
+
+  BtTransport._(this._c, this.label) {
+    _sub = _c.input.listen(_ctrl.add, onError: _ctrl.addError, onDone: () => _ctrl.close());
+  }
+
+  static Future<BtTransport> open(PortChoice dev) async {
+    final c = await FlutterClassicBluetooth()
+        .connect(address: dev.id, uuid: '00001101-0000-1000-8000-00805F9B34FB', timeout: const Duration(seconds: 15));
+    return BtTransport._(c, dev.label.split('  ·  ').first);
+  }
+
+  @override
+  Stream<Uint8List> get input => _ctrl.stream;
+
+  @override
+  Future<void> write(Uint8List data) async => _c.output.add(data);
+
+  @override
+  Future<void> close() async {
+    await _sub?.cancel();
+    try {
+      await _c.close();
+    } catch (_) {}
+    if (!_ctrl.isClosed) await _ctrl.close();
+  }
+}
 
 /// Ein auswählbarer Anschluss.
 class PortChoice {

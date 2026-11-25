@@ -1,6 +1,8 @@
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lr2021_app/core/node_box.dart';
+import 'package:lr2021_app/i18n.dart';
 import 'package:lr2021_app/core/updater.dart';
 import 'package:lr2021_app/mesh/lr_file.dart';
 import 'package:lr2021_app/mesh/lr_radio.dart';
@@ -120,6 +122,35 @@ void main() {
     expect(w.busy(-110), isFalse); // 8 dB über dem Rauschen: noch frei
     expect(w.busy(-95), isTrue); // anderer Sender
     expect(w.floor, lessThan(-114)); // belegte Werte verändern das Rauschen nicht
+  });
+
+  test('Frequenzsuche: Ergebnis der Node lesen, Bandplan-Hinweise', () {
+    final r = ScanResult.from({
+      't': 1795630000,
+      'from_mhz': 430.0,
+      'to_mhz': 440.0,
+      'bw_khz': 125.0,
+      'minutes': 5.0,
+      'sweeps': 12,
+      'floor_dbm': -118.5,
+      'channels': [
+        {'mhz': 433.6875, 'busy': 0.0, 'max_db': 3.0},
+        {'mhz': 433.9375, 'busy': 0.05, 'max_db': 29.0},
+      ],
+      'quiet': [
+        {'mhz': 433.65, 'busy': 0.0, 'max_db': 3.0},
+      ],
+    })!;
+    expect(r.sweeps, 12);
+    expect(r.channels.length, 2);
+    expect(r.quiet.first.mhz, 433.65);
+    expect(ScanResult.from('kaputt'), isNull);
+    L.lang = 'de';
+    expect(bandHint(436.5), contains('Satellit'));
+    expect(bandHint(433.92), contains('Funkschlüssel'));
+    expect(bandHint(438.9), contains('Relais'));
+    expect(bandHint(433.65), contains('lizenzfrei'));
+    L.lang = 'en';
   });
 
   test('Versionen vergleichen', () {

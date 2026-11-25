@@ -5,53 +5,65 @@ import 'dart:typed_data';
 import 'transport.dart';
 import '../i18n.dart';
 
-/// Verbindung zur Node über das Konsolen-Kabel (CH340 der Trägerplatine oder CP2102, 115200 Baud).
-/// Die App meldet sich an der Linux-Konsole an und startet /opt/lr2021/serialbridge.py.
-/// Danach laufen beide Modems (Kanal 1 = A, 2 = B) und das GPS (Kanal 3) über diese eine Leitung:
-///   [Kanal] [COBS-Rahmen bzw. NMEA-Zeile] 0x00     Steuerung: Kanal 0x7F ('P' Ping, 'G' GPS, 'Q' Ende)
+/// Eine Verbindung zur Node, über die alles läuft (Brücke auf der Node, /opt/lr2021/serialbridge.py):
+///  * Node-Kabel (CH340 der Trägerplatine oder CP2102, 115200 Baud): die App meldet sich an der Linux-Konsole an
+///    und startet die Brücke
+///  * Bluetooth (Android): Sammelkanal der Node, die Brücke läuft dort schon – ohne Anmeldung
+/// Rahmen:  [Kanal] [Daten] 0x00   Kanal 1 = ESP32 A, 2 = ESP32 B (COBS-Rahmen), 3 = GPS (NMEA-Zeile),
+///          4 = Postfach (JSON-Zeile), 0x7F = Steuerung ('P' Ping, 'G'/'g' GPS, 'Q' Ende)
 class NodeSerialLink {
   static final Map<String, NodeSerialLink> _links = {};
   static String user = 'root';
   static String password = 'lr2021node';
 
   final PortChoice port;
+  final bool bluetooth;
   final Transport _raw;
   final Map<int, _Channel> _chans = {};
   final StreamController<String> _gps = StreamController<String>.broadcast();
+  final StreamController<String> _box = StreamController<String>.broadcast();
   final void Function(String text)? log;
   StreamSubscription<Uint8List>? _sub;
   Timer? _keepAlive;
   final List<int> _buf = [];
   bool _closed = false;
+  int _boxUsers = 0;
+  String bridgeVersion = '1';
 
-  NodeSerialLink._(this.port, this._raw, this.log);
+  NodeSerialLink._(this.port, this._raw, this.log, this.bluetooth);
 
   /// NMEA-Zeilen vom GPS der Node (nach [gpsOn]).
   Stream<String> get gpsLines => _gps.stream;
+  /// JSON-Zeilen vom Postfach der Node (Kanal 4).
+  Stream<String> get boxLines => _box.stream;
   bool get closed => _closed;
+  String get label => bluetooth ? 'Bluetooth ${port.label.split('  ·  ').first}' : 'Node-Kabel ${port.id}';
 
-  /// Aktive Verbindung (für GPS), falls eine offen ist.
+  /// Aktive Verbindung (für GPS und Postfach), falls eine offen ist.
   static NodeSerialLink? get active => _links.values.where((l) => !l._closed).firstOrNull;
 
+  static String _key(PortChoice p, bool bt) => bt ? 'bt:${p.id}' : p.id;
+
   /// Kanal für ESP32 [role] öffnen (baut die Verbindung beim ersten Mal auf).
-  static Future<Transport> channel(PortChoice port, String role, {void Function(String)? log}) async {
-    var l = _links[port.id];
-    if (l == null || l._closed) {
-      l = await _open(port, log);
-      _links[port.id] = l;
-    }
+  static Future<Transport> channel(PortChoice port, String role, {bool bluetooth = false, void Function(String)? log}) async {
+    final l = await open(port, bluetooth: bluetooth, log: log);
     return l._channel(role == 'A' ? 1 : 2);
   }
 
-  static Future<NodeSerialLink> _open(PortChoice port, void Function(String)? log) async {
-    final raw = await openUsb(port, baud: 115200);
-    final l = NodeSerialLink._(port, raw, log);
-    try {
-      await l._start();
-    } catch (e) {
-      l._closed = true;
-      await raw.close();
-      rethrow;
+  static Future<NodeSerialLink> open(PortChoice port, {bool bluetooth = false, void Function(String)? log}) async {
+    final k = _key(port, bluetooth);
+    var l = _links[k];
+    if (l == null || l._closed) {
+      final raw = bluetooth ? await BtTransport.open(port) : await openUsb(port, baud: 115200);
+      l = NodeSerialLink._(port, raw, log, bluetooth);
+      try {
+        await l._start();
+      } catch (e) {
+        l._closed = true;
+        await raw.close();
+        rethrow;
+      }
+      _links[k] = l;
     }
     return l;
   }
@@ -80,10 +92,12 @@ class NodeSerialLink {
 
     Future<void> send(String s) => _raw.write(Uint8List.fromList(latin1.encode(s)));
     try {
-      // 1) Läuft die Brücke schon (App wurde z. B. nur neu gestartet)?
+      // 1) Läuft die Brücke schon (Bluetooth immer; Kabel z. B. nach Neustart der App)?
       await _raw.write(Uint8List.fromList([0x7F, 0x50, 0x00]));
-      if (await waitFor(() => _hasPong(bytes), const Duration(milliseconds: 700))) {
-        log?.call(tr('Node-Kabel: Brücke lief schon'));
+      if (await waitFor(() => _hasPong(bytes), Duration(milliseconds: bluetooth ? 4000 : 700))) {
+        if (!bluetooth) log?.call(tr('Node-Kabel: Brücke lief schon'));
+      } else if (bluetooth) {
+        throw Exception(tr('Die Node antwortet nicht über Bluetooth. Läuft dort lr2021d 1.2 oder neuer?'));
       } else {
         // 2) Konsole: laufendes Programm abbrechen, Zustand erkennen
         text.clear();
@@ -122,7 +136,11 @@ class NodeSerialLink {
               : tr('Brücke auf der Node startet nicht ({0})', [_clean(tail())]));
         }
         log?.call(tr('Node-Kabel: Brücke gestartet'));
+        bytes.clear();
+        await _raw.write(Uint8List.fromList([0x7F, 0x50, 0x00]));
+        await waitFor(() => _hasPong(bytes), const Duration(milliseconds: 700));
       }
+      bridgeVersion = _pongVersion(bytes) ?? '1';
     } finally {
       await sub.cancel();
     }
@@ -143,13 +161,20 @@ class NodeSerialLink {
     return false;
   }
 
+  static String? _pongVersion(List<int> b) {
+    for (var i = 0; i + 2 < b.length; i++) {
+      if (b[i] == 0x7F && b[i + 1] == 0x70 && b[i + 2] != 0) return String.fromCharCode(b[i + 2]);
+    }
+    return null;
+  }
+
   static String _clean(String s) => s.replaceAll(RegExp(r'[\x00-\x1F\x7F-\xFF]'), ' ').trim();
 
   void _onData(Uint8List d) {
     for (final b in d) {
       if (b != 0) {
         _buf.add(b);
-        if (_buf.length > 4096) _buf.clear();
+        if (_buf.length > 8 * 1024 * 1024) _buf.clear();
         continue;
       }
       if (_buf.isEmpty) continue;
@@ -161,6 +186,8 @@ class NodeSerialLink {
         if (c != null && !c._ctrl.isClosed) c._ctrl.add(Uint8List.fromList([...body, 0]));
       } else if (ch == 3) {
         _gps.add(latin1.decode(body, allowInvalid: true));
+      } else if (ch == 4) {
+        _box.add(utf8.decode(body, allowMalformed: true));
       }
       // 0x7F (Pong) und Müll werden ignoriert
     }
@@ -174,6 +201,7 @@ class NodeSerialLink {
       if (!c._ctrl.isClosed) c._ctrl.close();
     }
     _chans.clear();
+    if (!_box.isClosed) _box.close();
   }
 
   Future<void> _ctrl(String cmd) async {
@@ -185,6 +213,19 @@ class NodeSerialLink {
 
   Future<void> gpsOn(bool on) => _ctrl(on ? 'G' : 'g');
 
+  /// Postfach benutzen (Kanal 4, ab Brücke 2). Mit [releaseBox] wieder freigeben.
+  bool get hasBox => bridgeVersion.compareTo('2') >= 0;
+  void useBox() => _boxUsers++;
+  Future<void> releaseBox() async {
+    if (_boxUsers > 0) _boxUsers--;
+    await _maybeClose();
+  }
+
+  Future<void> sendBox(String jsonLine) async {
+    if (_closed) throw Exception(tr('Verbindung zur Node getrennt'));
+    await _raw.write(Uint8List.fromList([4, ...utf8.encode(jsonLine), 0]));
+  }
+
   Transport _channel(int ch) {
     final old = _chans[ch];
     if (old != null && !old._ctrl.isClosed) old._ctrl.close();
@@ -194,7 +235,7 @@ class NodeSerialLink {
   }
 
   Future<void> _write(int ch, Uint8List data) async {
-    if (_closed) throw Exception(tr('Node-Kabel getrennt'));
+    if (_closed) throw Exception(tr('Verbindung zur Node getrennt'));
     // Jeden Rahmen (endet mit 0x00) mit der Kanalnummer versehen
     final out = <int>[];
     final pend = _chans[ch]!._pending;
@@ -211,15 +252,20 @@ class NodeSerialLink {
 
   Future<void> _release(int ch) async {
     _chans.remove(ch);
-    if (_chans.isEmpty && !_closed) {
-      // keiner mehr verbunden: Brücke beenden, Konsole wieder frei
-      await _ctrl('Q');
+    await _maybeClose();
+  }
+
+  Future<void> _maybeClose() async {
+    if (_chans.isEmpty && _boxUsers == 0 && !_closed) {
+      // keiner mehr verbunden: Brücke beenden (Kabel: Konsole wieder frei)
+      if (!bluetooth) await _ctrl('Q');
       _closed = true;
       _keepAlive?.cancel();
       await _sub?.cancel();
       await _raw.close();
       if (!_gps.isClosed) await _gps.close();
-      _links.remove(port.id);
+      if (!_box.isClosed) await _box.close();
+      _links.remove(_key(port, bluetooth));
     }
   }
 }
@@ -233,7 +279,7 @@ class _Channel implements Transport {
   _Channel(this.link, this.ch);
 
   @override
-  String get label => 'Node-Kabel ${link.port.id} · ${ch == 1 ? 'A' : 'B'}';
+  String get label => '${link.label} · ${ch == 1 ? 'A' : 'B'}';
 
   @override
   Stream<Uint8List> get input => _ctrl.stream;

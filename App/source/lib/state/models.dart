@@ -110,6 +110,7 @@ class Settings {
   String lang = 'en'; // Sprache der Oberfläche: 'en' (Standard) oder 'de'
   bool autoUpdate = true; // beim Start nach neuen App-Versionen suchen
   String skipVersion = ''; // diese Version nicht mehr anbieten
+  Map<String, int> boxCursor = {}; // Node-Kennung -> letztes abgeholtes Paket aus ihrem Postfach
 
   Map<String, dynamic> toJson() => {
         'long': longName,
@@ -177,6 +178,7 @@ class Settings {
         'lang': lang,
         'autoUpd': autoUpdate,
         'skipVer': skipVersion,
+        'boxCur': boxCursor,
       };
 
   void load(Map<String, dynamic> j) {
@@ -252,6 +254,8 @@ class Settings {
     lang = j['lang'] as String? ?? 'en';
     autoUpdate = j['autoUpd'] as bool? ?? true;
     skipVersion = j['skipVer'] as String? ?? '';
+    final bc = j['boxCur'];
+    if (bc is Map) boxCursor = {for (final e in bc.entries) '${e.key}': (e.value as num).toInt()};
   }
 }
 

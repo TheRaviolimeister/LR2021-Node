@@ -16,6 +16,7 @@ dependencies:
   path_provider: ^2.1.4
   flutter_libserialport: ^0.6.0
   usb_serial: ^0.5.2
+  flutter_classic_bluetooth: ^1.7.3
   sensors_plus: ^6.1.0
   crypto: ^3.0.3
   file_picker: ^8.1.2

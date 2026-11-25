@@ -12,6 +12,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../core/bytes.dart';
 import '../core/demo.dart';
 import '../core/modem.dart';
+import '../core/node_box.dart';
 import '../core/node_serial.dart';
 import '../core/regulatory.dart';
 import '../core/transport.dart';
@@ -59,6 +60,7 @@ class ModemSlot {
   DateTime? quietUntil; // fremde Dateiübertragung läuft: eigene Sendungen (außer Datei-Rückmeldungen) zurückhalten
   Timer? _quietTimer;
   final ChannelWatch watch = ChannelWatch(); // Grundrauschen, um laute Fremdsender zu erkennen
+  LoraCfg? applied; // zuletzt eingestellte LoRa-Werte (bekommt das Postfach der Node)
 
   bool get connected => client != null && !client!.isClosed;
   String get band => role == 'A' ? tr('HF 868') : tr('LF 433');
@@ -329,7 +331,10 @@ class NodeApp extends ChangeNotifier {
   }
 
   void changed({bool save = false}) {
-    if (save) _scheduleSave();
+    if (save) {
+      _scheduleSave();
+      _boxSettingsSoon();
+    }
     notifyListeners();
   }
 
@@ -407,6 +412,15 @@ class NodeApp extends ChangeNotifier {
   // ------------------------------------------------------------------ Verbinden
   Future<void> refreshPorts(ModemSlot s) async {
     try {
+      if (s.kind == TransportKind.bluetooth) {
+        // gekoppelte Geräte, Nodes zuerst; beide Modems über dieselbe Verbindung
+        s.ports = await listBtNodes();
+        if (s.port == null || !s.ports.any((p) => p.id == s.port!.id)) {
+          s.port = s.ports.where((p) => p.cp210x).firstOrNull ?? s.ports.firstOrNull;
+        }
+        notifyListeners();
+        return;
+      }
       s.ports = await listUsbPorts();
       if (s.kind == TransportKind.node) {
         // Node-Kabel: beide Modems über dieselbe Konsole
@@ -435,7 +449,7 @@ class NodeApp extends ChangeNotifier {
       final k = availableTransportKinds.where((x) => x.name == _lastKind(s)).firstOrNull;
       if (k == null) continue;
       s.kind = k;
-      if (k == TransportKind.usb || k == TransportKind.node) {
+      if (k == TransportKind.usb || k == TransportKind.node || k == TransportKind.bluetooth) {
         await refreshPorts(s);
         final p = s.ports.where((x) => x.id == _lastPort(s)).firstOrNull;
         if (p == null) continue;
@@ -450,7 +464,7 @@ class NodeApp extends ChangeNotifier {
     s._reconnect?.cancel();
     s._reconnect = Timer(const Duration(seconds: 5), () async {
       if (s.connected || s.connecting || s.manualOff) return;
-      if (s.kind == TransportKind.usb || s.kind == TransportKind.node) {
+      if (s.kind == TransportKind.usb || s.kind == TransportKind.node || s.kind == TransportKind.bluetooth) {
         await refreshPorts(s);
         final p = s.ports.where((x) => x.id == _lastPort(s)).firstOrNull;
         if (p == null) {
@@ -492,6 +506,15 @@ class NodeApp extends ChangeNotifier {
           break;
         case TransportKind.network:
           t = await TcpTransport.open(settings.piHost, s.role == 'A' ? 2021 : 2022);
+          break;
+        case TransportKind.bluetooth:
+          final p = s.port;
+          if (p == null) {
+            throw Exception(tr('Keine Node gewählt. Die Node einmal in den Bluetooth-Einstellungen des Handys koppeln (LR2021-…), dann „Suchen“.'));
+          }
+          s.status = tr('verbinde per Bluetooth …');
+          notifyListeners();
+          t = await NodeSerialLink.channel(p, s.role, bluetooth: true, log: (x) => _log(s.role, LogKind.info, x));
           break;
         case TransportKind.demo:
           t = DemoTransport(s.role);
@@ -577,16 +600,18 @@ class NodeApp extends ChangeNotifier {
     }
     await applyMode(s);
     unawaited(refreshStats(s));
-    if (s.kind == TransportKind.node) {
-      // Node-Kabel: das andere Modem gleich mitverbinden und GPS darüber holen
+    if (s.kind == TransportKind.node || s.kind == TransportKind.bluetooth) {
+      // Node-Kabel / Bluetooth: das andere Modem gleich mitverbinden und GPS darüber holen
       final o = s == a ? b : a;
-      if (!o.connected && !o.connecting && !o.manualOff && (o.kind == TransportKind.node || o.kind == TransportKind.demo || _lastKind(o).isEmpty || o.kind == TransportKind.usb)) {
-        o.kind = TransportKind.node;
+      if (!o.connected && !o.connecting && !o.manualOff &&
+          (o.kind == s.kind || o.kind == TransportKind.demo || _lastKind(o).isEmpty || o.kind == TransportKind.usb || o.kind == TransportKind.node)) {
+        o.kind = s.kind;
         o.port = s.port;
         unawaited(connect(o));
       }
       _attachSerialGps();
     }
+    if (viaNode(s.kind)) unawaited(_connectBox(s));
   }
 
   void _attachSerialGps() {
@@ -611,11 +636,15 @@ class NodeApp extends ChangeNotifier {
     s._queue.clear();
     s.transmitting = false;
     if (c != null) {
-      try {
-        await c.standby().timeout(const Duration(milliseconds: 500));
-      } catch (_) {}
+      // über die Node bleibt das Modem auf Empfang – das Postfach hört weiter mit
+      if (!viaNode(s.kind)) {
+        try {
+          await c.standby().timeout(const Duration(milliseconds: 500));
+        } catch (_) {}
+      }
       await c.close();
       if (!quiet) _log(s.role, LogKind.info, tr('Getrennt'));
+      if (!slots.any((o) => o.connected && viaNode(o.kind))) unawaited(_closeBox());
     }
     s.status = tr('nicht verbunden');
     notifyListeners();
@@ -743,6 +772,8 @@ class NodeApp extends ChangeNotifier {
       await c.setLora(cfg);
       await c.rxStart();
       s.config = await c.config();
+      s.applied = cfg.copy();
+      _boxSettingsSoon();
       s.status = tr('Empfang');
       final lim = limitFor(s, m);
       _log(s.role, LogKind.info, tr('{0}: {1}, {2} dBm{3}', [radioModeName(m), cfg.summary, cfg.powerDbm, hamMode(s) ? tr(', Amateurfunk (unverschlüsselt)') : '']),
@@ -840,12 +871,18 @@ class NodeApp extends ChangeNotifier {
   ModemSlot? get meshtasticSlot => _slotFor(RadioMode.meshtastic);
   ModemSlot? get lrSlot => _slotFor(RadioMode.lrfunk);
 
+  /// Nachgeholte Pakete (Zone #lrReplay) lösen nichts aus; im LR-Funk antwortet die Node selbst (Zone #lrMute),
+  /// solange ihr Postfach das übernimmt. Gilt auch für Timer, die dort gestartet werden.
+  static bool get _txMuted => Zone.current[#lrReplay] == true || Zone.current[#lrMute] == true;
+
   void _enqueue(ModemSlot s, Uint8List data, String what, [void Function(TxDoneEvent ev)? done, int gapMs = 150]) {
+    if (_txMuted) return;
     s._queue.add(_TxJob(data, what, done, gapMs: gapMs));
     _pump(s);
   }
 
   void _enqueueAction(ModemSlot s, String what, Future<void> Function() f) {
+    if (Zone.current[#lrReplay] == true) return;
     s._queue.add(_TxJob(Uint8List(0), what, null, action: f));
     _pump(s);
   }
@@ -853,6 +890,7 @@ class NodeApp extends ChangeNotifier {
   /// Paket einer Dateiübertragung (Teil, Ankündigung, Rückmeldung): Kanal wird vorher geprüft, und es wird auch
   /// gesendet, während eigene Sendungen wegen einer fremden Übertragung zurückgehalten werden.
   void _enqueueFile(ModemSlot s, Uint8List data, String what, [void Function(TxDoneEvent ev)? done, int gapMs = 150]) {
+    if (_txMuted) return;
     s._queue.add(_TxJob(data, what, done, gapMs: gapMs, file: true));
     _pump(s);
   }
@@ -910,6 +948,8 @@ class NodeApp extends ChangeNotifier {
     s._txRunning = true;
     try {
       while (s._queue.isNotEmpty && s.connected) {
+        // die Node sucht gerade auf diesem Modul nach einer Frequenz: nichts senden
+        if (scanRunning && scanJob?['role'] == s.role) break;
         var idx = 0;
         if (_quiet(s)) {
           // fremde Dateiübertragung: nur Dateipakete und Umschaltungen, der Rest wartet
@@ -1124,6 +1164,369 @@ class NodeApp extends ChangeNotifier {
     return null;
   }
 
+  // ------------------------------------------------------------------ Postfach der Node
+  /// Postfach der Node (lr2021d ab 1.2): speichert alles Empfangene, sendet Dateiaufträge auch ohne Handy weiter,
+  /// sucht die ruhigste Frequenz.
+  NodeBox? box;
+  bool _boxOpening = false, boxSyncing = false;
+  ScanResult? scanResult;
+  Map<String, dynamic>? scanJob;
+  final Map<String, Message> _boxJobMsg = {};
+  Timer? _boxSetTimer;
+
+  bool get boxActive => box != null && !box!.closed;
+  bool get scanRunning => scanJob != null && scanJob!['finished'] == null;
+  bool get canScan => boxActive && box!.caps.contains('scan');
+
+  /// Übernimmt das Postfach die LR-Funk-Antworten (Bestätigungen, fehlende Teile) dieses Moduls?
+  bool _boxHandlesLr(ModemSlot s) =>
+      boxActive &&
+      box!.caps.contains('lrfile') &&
+      viaNode(s.kind) &&
+      modeOf(s) == RadioMode.lrfunk &&
+      settings.callsign.trim().isNotEmpty;
+
+  Future<void> _connectBox(ModemSlot s) async {
+    if (boxActive || _boxOpening) return;
+    _boxOpening = true;
+    NodeBox? nb;
+    try {
+      if (s.kind == TransportKind.network) {
+        nb = await NodeBox.overTcp(settings.piHost);
+      } else {
+        final l = NodeSerialLink.active;
+        if (l == null || !l.hasBox) {
+          _log(tr('Node'), LogKind.info,
+              tr('Die Node hat noch kein Postfach (lr2021d älter als 1.2). Nach dem Update empfängt und sendet sie auch ohne Handy.'));
+          return;
+        }
+        nb = NodeBox.overLink(l);
+      }
+      nb.hello = await nb.call('hello');
+      final mine = nb;
+      box = mine;
+      mine.events.listen(_onBoxEvent, onDone: () {
+        if (identical(box, mine)) {
+          box = null;
+          notifyListeners();
+        }
+      });
+      scanResult = ScanResult.from(mine.hello['scan']) ?? scanResult;
+      for (final j in ((mine.hello['jobs'] as List?) ?? const [])) {
+        _applyJob((j as Map).cast<String, dynamic>());
+      }
+      _log(tr('Node'), LogKind.info, tr('Postfach der Node {0} verbunden ({1})', [mine.nodeId, mine.via]));
+      await _pushBoxSettings();
+      await _syncBox();
+    } catch (e) {
+      if (nb != null && !identical(box, nb)) unawaited(nb.close());
+      _log(tr('Node'), LogKind.warn, tr('Postfach der Node nicht erreichbar'), '$e');
+    } finally {
+      _boxOpening = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> _closeBox() async {
+    final nb = box;
+    box = null;
+    scanJob = null;
+    await nb?.close();
+    notifyListeners();
+  }
+
+  void _boxSettingsSoon() {
+    if (!boxActive) return;
+    _boxSetTimer?.cancel();
+    _boxSetTimer = Timer(const Duration(seconds: 1), () => unawaited(_pushBoxSettings()));
+  }
+
+  /// Was die Node braucht, um ohne Handy weiterzuarbeiten: Rufzeichen, Kennung, LR-Funk-Modul, Datei-Einstellungen,
+  /// erlaubte Höchstleistung und die zuletzt eingestellten Funkwerte (für einen Neustart des ESP32).
+  Future<void> _pushBoxSettings() async {
+    final nb = box;
+    if (nb == null || nb.closed) return;
+    final loud = <String, int>{};
+    final radio = <String, Map<String, dynamic>>{};
+    for (final s in slots) {
+      final c = s.applied;
+      if (c != null && s.connected && viaNode(s.kind)) {
+        radio[s.role] = {
+          'freq_hz': c.freqHz,
+          'bw_hz': c.bwHz,
+          'sf': c.sf,
+          'cr': c.cr,
+          'sync': c.sync,
+          'power': c.powerDbm,
+          'preamble': c.preamble,
+          'iq': (c.flags & 2) != 0,
+        };
+      }
+      if (modeOf(s) == RadioMode.lrfunk && settings.lrFileLoud) {
+        final lim = limitFor(s, RadioMode.lrfunk);
+        if (lim.allowed) loud[s.role] = lim.maxDbm;
+      }
+    }
+    final lrRole = modeOf(b) == RadioMode.lrfunk ? 'B' : (modeOf(a) == RadioMode.lrfunk ? 'A' : '');
+    try {
+      await nb.call('settings', {
+        'settings': {
+          'callsign': settings.callsign.trim().toUpperCase(),
+          'name': _cut(settings.longName, 39),
+          'num': settings.myNum,
+          'lr_role': lrRole,
+          'auto_ack': settings.lrAutoAck,
+          'twice': settings.lrFileTwice,
+          'clear': settings.lrFileClear,
+          'loud_dbm': loud,
+          'radio': radio,
+        }
+      });
+    } catch (_) {}
+  }
+
+  /// Alles abholen, was die Node empfangen hat, seit die App zuletzt verbunden war – und wie live auswerten
+  /// (nur ohne Antworten zu senden).
+  Future<void> _syncBox() async {
+    final nb = box;
+    if (nb == null || boxSyncing) return;
+    boxSyncing = true;
+    notifyListeners();
+    var n = 0;
+    try {
+      final id = nb.nodeId;
+      var since = settings.boxCursor[id] ?? 0;
+      final head = nb.hello['head'] as int? ?? 0;
+      if (since > head) since = 0; // Speicher der Node wurde gelöscht
+      while (true) {
+        final r = await nb.call('sync', {'since': since, 'limit': 150}, const Duration(seconds: 40));
+        for (final it in (r['items'] as List? ?? const [])) {
+          if (_replay((it as Map).cast<String, dynamic>())) n++;
+        }
+        since = r['last'] as int? ?? since;
+        settings.boxCursor[id] = since;
+        if (r['more'] != true) break;
+      }
+      _scheduleSave();
+      if (n > 0) {
+        _log(tr('Node'), LogKind.info, tr('{0} Pakete von der Node nachgeholt', [n]));
+        notice(tr('{0} Pakete von der Node nachgeholt', [n]));
+      }
+    } catch (e) {
+      _log(tr('Node'), LogKind.warn, tr('Abgleich mit der Node unterbrochen'), '$e');
+    } finally {
+      boxSyncing = false;
+      notifyListeners();
+    }
+  }
+
+  bool _replay(Map<String, dynamic> it) {
+    if (it['crc'] == true) return false;
+    final s = slot(it['role'] as String? ?? 'B');
+    final h = it['d'] as String? ?? '';
+    final data = Uint8List(h.length ~/ 2);
+    for (var i = 0; i < data.length; i++) {
+      data[i] = int.parse(h.substring(2 * i, 2 * i + 2), radix: 16);
+    }
+    final e = RxEvent((it['rssi'] as num? ?? 0).toDouble(), (it['snr'] as num? ?? 0).toDouble(), (it['fe'] as num? ?? 0).toInt(),
+        false, 0, data,
+        at: DateTime.fromMillisecondsSinceEpoch(((it['t'] as num? ?? 0) * 1000).round()), replay: true);
+    runZoned(() {
+      try {
+        _onRx(s, e);
+      } catch (_) {}
+    }, zoneValues: {#lrReplay: true});
+    return true;
+  }
+
+  void _onBoxEvent(Map<String, dynamic> m) {
+    switch (m['op']) {
+      case 'cursor':
+        // live Empfangenes kommt parallel über das Modem: Stand merken, damit es nicht noch einmal nachgeholt wird
+        if (!boxSyncing) {
+          final id = box?.nodeId ?? '';
+          final last = m['last'] as int? ?? 0;
+          if (last > (settings.boxCursor[id] ?? 0)) {
+            settings.boxCursor[id] = last;
+            _scheduleSave();
+          }
+        }
+        return;
+      case 'job':
+        _applyJob((m['job'] as Map).cast<String, dynamic>());
+        break;
+      case 'scan':
+        scanResult = ScanResult.from(m['result']) ?? scanResult;
+        notice(tr('Frequenzsuche fertig'));
+        break;
+      case 'file':
+        _log(tr('Node'), LogKind.rx, tr('Die Node hat eine Datei vollständig empfangen: {0} von {1}', [m['name'], m['who']]));
+        break;
+    }
+    notifyListeners();
+  }
+
+  void _applyJob(Map<String, dynamic> j) {
+    if (j['kind'] == 'scan') {
+      final was = scanRunning;
+      scanJob = j;
+      if (was && !scanRunning) {
+        for (final s in slots) {
+          _pump(s);
+        }
+      }
+      return;
+    }
+    if (j['kind'] != 'file') return;
+    final xfer = j['xfer'] as int?;
+    final msg = _boxJobMsg[j['id']] ?? messages.where((m) => m.mine && m.chat == 'lr' && m.pktId == xfer).lastOrNull;
+    if (msg == null) return;
+    _boxJobMsg[j['id'] as String] = msg;
+    final acked = ((j['acked_by'] as List?) ?? const []).cast<String>();
+    final miss = ((j['missing_by'] as Map?) ?? const {}).cast<String, dynamic>();
+    final prog = (j['progress'] as num?)?.toDouble();
+    if (prog != null && prog > 0) msg.progress = prog;
+    switch (j['state'] as String? ?? '') {
+      case 'fertig':
+        msg
+          ..status = MsgStatus.acked
+          ..progress = 1
+          ..info = miss.isEmpty
+              ? tr('vollständig empfangen von {0}', [acked.join(', ')])
+              : tr('vollständig bei {0}, unvollständig bei {1}', [acked.join(', '), miss.keys.join(', ')]);
+        break;
+      case 'unvollständig':
+        msg
+          ..status = MsgStatus.failed
+          ..info = tr('unvollständig bei {0} – es wird nicht mehr besser, Übertragung beendet', [miss.keys.join(', ')]);
+        break;
+      case 'keine Antwort':
+        msg
+          ..status = MsgStatus.failed
+          ..info = tr('keine Bestätigung');
+        break;
+      case 'abgebrochen':
+        msg
+          ..status = MsgStatus.failed
+          ..info = tr('abgebrochen');
+        break;
+      case 'fehler':
+        msg
+          ..status = MsgStatus.failed
+          ..info = tr('Node: {0}', [j['info']]);
+        break;
+      case 'wartet':
+        msg
+          ..status = MsgStatus.pending
+          ..info = tr('auf der Node gespeichert – sie sendet auch weiter, wenn das Handy getrennt ist');
+        break;
+      case 'kündigt an':
+        msg.info = tr('Node kündigt die Datei an …');
+        break;
+      case 'sendet':
+        msg.info = tr('Node sendet …');
+        break;
+      case 'sendet nach':
+        msg.info = tr('Runde {0}: {1} fehlende Teile werden nachgesendet', [j['round'], miss.values.fold<int>(0, (a, b) => a + (b as int))]);
+        break;
+      case 'wartet auf Antwort':
+        msg
+          ..status = MsgStatus.sent
+          ..info = tr('gesendet, warte auf Bestätigung …');
+        break;
+    }
+    _scheduleSave();
+  }
+
+  /// Datei an die Node übergeben: sie speichert sie und sendet sie selbst (auch wenn das Handy danach getrennt wird).
+  String? _sendFileViaNode(ModemSlot s, Uint8List data, String name, String mime, int xfer, {String? localPath}) {
+    final me = settings.myNum == 0 ? 0x4C520000 : settings.myNum;
+    final msg = Message(
+        chat: 'lr',
+        from: 'lr:${me.toRadixString(16).padLeft(8, '0')}',
+        fromName: settings.callsign.toUpperCase(),
+        text: name,
+        at: DateTime.now(),
+        mine: true,
+        status: MsgStatus.pending,
+        pktId: xfer)
+      ..file = localPath
+      ..mime = mime
+      ..fileSize = data.length
+      ..info = tr('wird an die Node übergeben …');
+    messages.add(msg);
+    final lim = limitFor(s, RadioMode.lrfunk);
+    final nb = box!;
+    unawaited(() async {
+      try {
+        final r = await nb.call(
+            'send_file',
+            {
+              'role': s.role,
+              'name': name,
+              'mime': mime,
+              'data': base64Encode(data),
+              'opts': {
+                'xfer': xfer,
+                'twice': settings.lrFileTwice,
+                'announce': settings.lrFileLoud,
+                'loud_dbm': settings.lrFileLoud && lim.allowed ? lim.maxDbm : null,
+                'air_s': (fileAirtimeS(data.length) ?? 0).ceil(),
+              },
+            },
+            const Duration(minutes: 5));
+        final j = (r['job'] as Map).cast<String, dynamic>();
+        _boxJobMsg[j['id'] as String] = msg;
+        _applyJob(j);
+      } catch (e) {
+        msg
+          ..status = MsgStatus.failed
+          ..info = tr('Übergabe an die Node fehlgeschlagen: {0}', ['$e'.replaceFirst('Exception: ', '')]);
+      }
+      _scheduleSave();
+      notifyListeners();
+    }());
+    _scheduleSave();
+    notifyListeners();
+    return null;
+  }
+
+  /// Frequenzsuche auf der Node starten (Modul B im LR-Funk-Betrieb). Gibt Fehlertext oder null zurück.
+  Future<String?> startScan(double fromMhz, double toMhz, double minutes) async {
+    final nb = box;
+    if (nb == null || !canScan) return tr('Die Frequenzsuche braucht eine Verbindung über die Node (lr2021d 1.2 oder neuer).');
+    if (modeOf(b) != RadioMode.lrfunk) return tr('Die Frequenzsuche braucht ESP32 B im LR-Funk-Betrieb.');
+    try {
+      final r = await nb.call('scan', {
+        'role': 'B',
+        'from_mhz': fromMhz,
+        'to_mhz': toMhz,
+        'bw_khz': settings.lrCfg.bwHz / 1000,
+        'minutes': minutes,
+      });
+      scanJob = (r['job'] as Map).cast<String, dynamic>();
+      notifyListeners();
+      return null;
+    } catch (e) {
+      return '$e'.replaceFirst('Exception: ', '');
+    }
+  }
+
+  Future<void> cancelScan() async {
+    final id = scanJob?['id'];
+    if (id == null) return;
+    try {
+      await box?.call('cancel', {'id': id});
+    } catch (_) {}
+  }
+
+  /// LR-Funk-Frequenz übernehmen (z. B. aus der Frequenzsuche) und gleich einstellen.
+  Future<void> setLrFrequency(double mhz) async {
+    settings.lrCfg.freqHz = (mhz * 1e6).round();
+    changed(save: true);
+    if (modeOf(b) == RadioMode.lrfunk && b.connected) await applyMode(b);
+  }
+
   // ------------------------------------------------------------------ Dateien und Bilder (LR-Funk)
   /// Größte Datei für LR-Funk (1 MB ≈ 5800 Teile; bei SF9/125 kHz rund eine Stunde Sendezeit).
   static const maxFileBytes = 1024 * 1024;
@@ -1156,6 +1559,7 @@ class NodeApp extends ChangeNotifier {
     final me = settings.myNum == 0 ? 0x4C520000 : settings.myNum;
     final xfer = _newId();
     final fast = _fast24(s);
+    if (!fast && _boxHandlesLr(s)) return _sendFileViaNode(s, data, name, mime, xfer, localPath: localPath);
     final chunks = FileChunk.split(data, mime, name, xfer, size: fast ? LrFileProto.chunkSize24 : LrFileProto.chunkSize);
     final msg = Message(
         chat: 'lr',
@@ -1981,7 +2385,12 @@ class NodeApp extends ChangeNotifier {
         _onMeshCore(s, e);
         break;
       case RadioMode.lrfunk:
-        _onLr(s, e);
+        if (_boxHandlesLr(s) && !e.replay) {
+          // die Node bestätigt und fordert selbst nach – hier nur anzeigen
+          runZoned(() => _onLr(s, e), zoneValues: {#lrMute: true});
+        } else {
+          _onLr(s, e);
+        }
         break;
       case RadioMode.manual:
         final t = String.fromCharCodes(e.data.where((c) => c >= 0x20 && c < 0x7F));
@@ -2355,7 +2764,8 @@ class NodeApp extends ChangeNotifier {
         _onFileChunk(s, p, key, who, e);
         break;
       case LrType.fileAck:
-        _onFileAck(p, who);
+        // Rückmeldungen zu eigenen Dateien (die die App selbst sendet, z. B. über 2,4 GHz) immer auswerten
+        if (Zone.current[#lrReplay] != true) runZoned(() => _onFileAck(p, who), zoneValues: {#lrMute: false});
         break;
       case LrType.fileOffer:
         _onFileOffer(s, p, key, who);

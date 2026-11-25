@@ -38,6 +38,7 @@ connects to the node over Wi-Fi (“Network (Pi)”); USB connections are not av
 | **Network (Pi)** | phone/PC in the node's Wi-Fi: address `10.42.0.1` (USB network: `192.168.7.1`) |
 | **Node cable** | PC via USB on the node's CP2102; the app logs in to the console and connects A, B and GPS over the one cable |
 | **ESP32 USB** | a single modem directly over USB (“COM” socket) |
+| **Bluetooth (node)** | Android: pair the node once (“LR2021-xxxx”, no PIN), then everything – both modems, GPS, mailbox – runs over one Bluetooth connection; the phone's Wi-Fi and mobile data stay free |
 | **Demo** | simulated modem for trying things out |
 
 ## Features
@@ -58,6 +59,12 @@ connects to the node over Wi-Fi (“Network (Pi)”); USB connections are not av
   (2425 MHz, SF5, 812 kHz, about ten times faster, shorter range): the sender announces the file on
   70 cm, both sides switch to 2.4 GHz for the transfer and come back afterwards; if nobody answers
   there, the file is sent on 70 cm. Needs 2.4 GHz antennas and the setting on both sides.
+- **Node mailbox:** connected through the node (Bluetooth, network or node cable), the app hands pictures
+  and files to the node, which sends them on even after the phone disconnects. The node keeps receiving
+  without the phone; on the next connection the app fetches everything it missed. **Radio → LR radio →
+  “Find the quietest frequency”** lets the node measure for 1–60 minutes how busy each channel is (70 cm
+  amateur band or the licence-free range); one of the quietest – or an own frequency – becomes the LR
+  radio frequency.
 - **Nodes:** every station heard (Meshtastic, MeshCore, LR radio) with signal, hops, device, battery,
   position, distance; request node info, position and telemetry, trace route, favourites, ignore.
 - **Map:** topo, satellite, hybrid (aerial imagery with street names), street; save areas for offline

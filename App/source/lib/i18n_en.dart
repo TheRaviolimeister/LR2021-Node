@@ -805,4 +805,69 @@ const Map<String, String> enTexts = {
   '{0} kündigt eine Datei an – eigene Sendungen warten': '{0} announces a file – own transmissions are held back',
   '{0} von {1} Teilen – der Sender antwortet nicht mehr': '{0} of {1} parts – the sender no longer answers',
   'Datei vollständig – bestätigt': 'File complete – confirmed',
+  // Bluetooth, Postfach der Node, Frequenzsuche
+  'Bluetooth (Node)': 'Bluetooth (node)',
+  'Die Node antwortet nicht über Bluetooth. Läuft dort lr2021d 1.2 oder neuer?':
+      'The node does not answer over Bluetooth. Is lr2021d 1.2 or newer running on it?',
+  'Verbindung zur Node getrennt': 'Connection to the node lost',
+  'Postfach getrennt': 'Mailbox disconnected',
+  'Postfach antwortet nicht ({0})': 'Mailbox does not answer ({0})',
+  'Satellitenbereich – nicht benutzen': 'satellite segment – do not use',
+  'lizenzfrei, viele Funkschlüssel/Wetterstationen': 'licence-free, many remote keys / weather stations',
+  'LoRa-APRS': 'LoRa APRS',
+  'auch lizenzfrei nutzbar (10 mW)': 'also usable licence-free (10 mW)',
+  'Relaisausgaben – meiden': 'repeater outputs – avoid',
+  'Relaiseingaben – meiden': 'repeater inputs – avoid',
+  'Schmalband/EME – meiden': 'narrowband / EME – avoid',
+  '70-cm-Band (nur mit Lizenz)': '70 cm band (licence only)',
+  'außerhalb des 70-cm-Bands': 'outside the 70 cm band',
+  'Keine Node gewählt. Die Node einmal in den Bluetooth-Einstellungen des Handys koppeln (LR2021-…), dann „Suchen“.':
+      'No node selected. Pair the node once in the phone\'s Bluetooth settings (LR2021-…), then tap “Search”.',
+  'verbinde per Bluetooth …': 'connecting over Bluetooth …',
+  'Die Node hat noch kein Postfach (lr2021d älter als 1.2). Nach dem Update empfängt und sendet sie auch ohne Handy.':
+      'The node has no mailbox yet (lr2021d older than 1.2). After the update it receives and sends without the phone too.',
+  'Postfach der Node {0} verbunden ({1})': 'Mailbox of node {0} connected ({1})',
+  'Postfach der Node nicht erreichbar': 'Mailbox of the node not reachable',
+  '{0} Pakete von der Node nachgeholt': '{0} packets fetched from the node',
+  'Abgleich mit der Node unterbrochen': 'Sync with the node interrupted',
+  'Frequenzsuche fertig': 'Frequency scan finished',
+  'Die Node hat eine Datei vollständig empfangen: {0} von {1}': 'The node received a file completely: {0} from {1}',
+  'abgebrochen': 'cancelled',
+  'auf der Node gespeichert – sie sendet auch weiter, wenn das Handy getrennt ist':
+      'stored on the node – it keeps sending even when the phone disconnects',
+  'Node kündigt die Datei an …': 'node is announcing the file …',
+  'Node sendet …': 'node is sending …',
+  'wird an die Node übergeben …': 'handing over to the node …',
+  'Übergabe an die Node fehlgeschlagen: {0}': 'Handing over to the node failed: {0}',
+  'Die Frequenzsuche braucht eine Verbindung über die Node (lr2021d 1.2 oder neuer).':
+      'The frequency scan needs a connection through the node (lr2021d 1.2 or newer).',
+  'Die Frequenzsuche braucht ESP32 B im LR-Funk-Betrieb.': 'The frequency scan needs ESP32 B in LR radio mode.',
+  'Die Node einmal in den Bluetooth-Einstellungen des Handys koppeln („LR2021-…“, ohne PIN), dann hier auswählen. Über die eine Verbindung laufen ESP32 A und B, das GPS und das Postfach der Node – WLAN und mobile Daten des Handys bleiben frei.':
+      'Pair the node once in the phone\'s Bluetooth settings (“LR2021-…”, no PIN), then select it here. ESP32 A and B, the GPS and the node\'s mailbox all run over this one connection – the phone\'s Wi-Fi and mobile data stay free.',
+  'Frequenzsuche läuft …': 'Frequency scan running …',
+  'Ruhigste Frequenz suchen': 'Find the quietest frequency',
+  'Postfach der Node verbunden – sie empfängt und sendet auch ohne Handy':
+      'Node mailbox connected – it receives and sends without the phone too',
+  'Postfach der Node nicht verbunden': 'Node mailbox not connected',
+  '70 cm Amateurfunk 430–440 MHz (mit Lizenz)': '70 cm amateur band 430–440 MHz (licence)',
+  'lizenzfrei 433,05–434,79 MHz': 'licence-free 433.05–434.79 MHz',
+  'LR-Funk jetzt auf {0} MHz – alle Stationen im Netz brauchen dieselbe Frequenz.':
+      'LR radio now on {0} MHz – every station in the network needs the same frequency.',
+  '{0} MHz eingestellt, Senden dort aber nicht erlaubt: {1}': '{0} MHz set, but transmitting there is not permitted: {1}',
+  'Die Node hört mit ESP32 B nacheinander alle Kanäle ab und zählt, wie oft dort jemand sendet. Währenddessen empfängt B nichts. Je länger die Suche, desto verlässlicher – am besten zu der Tageszeit, zu der du funken willst.':
+      'The node listens to every channel in turn with ESP32 B and counts how often someone transmits there. B receives nothing meanwhile. The longer the scan, the more reliable – best at the time of day you want to use the radio.',
+  'Aktuelle LR-Funk-Frequenz: {0} MHz': 'Current LR radio frequency: {0} MHz',
+  'Bereich': 'Range',
+  'Dauer': 'Duration',
+  'Ohne Lizenz darfst du nur im lizenzfreien Bereich senden – suchen geht trotzdem.':
+      'Without a licence you may only transmit in the licence-free range – scanning works anyway.',
+  'Suche starten': 'Start scan',
+  'Ergebnis vom {0}: {1}–{2} MHz, {3} Durchgänge in {4} min, Rauschen {5} dBm':
+      'Result of {0}: {1}–{2} MHz, {3} sweeps in {4} min, noise {5} dBm',
+  'Ruhigste Frequenzen:': 'Quietest frequencies:',
+  '{0} MHz · belegt {1} % · stärkstes Signal +{2} dB': '{0} MHz · busy {1} % · strongest signal +{2} dB',
+  'Eigene Frequenz (MHz)': 'Own frequency (MHz)',
+  'Bitte eine Frequenz in MHz eingeben, z. B. 433.650': 'Please enter a frequency in MHz, e.g. 433.650',
+  'Schließen': 'Close',
+  'Belegt: {0}': 'Busy: {0}',
 };

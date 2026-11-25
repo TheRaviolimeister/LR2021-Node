@@ -2,6 +2,20 @@
 
 ## 1.7.5
 
+- Node software lr2021d 1.2.0 with a **mailbox**: the node keeps working without the phone
+  - Everything received (Meshtastic and LR radio) is stored on the node; when the app connects – also for
+    the first time – it fetches what it missed and shows it
+  - On LR radio the node itself acknowledges messages and receives files completely (asks for missing
+    parts, confirms)
+  - Pictures and files sent from the app over the node are stored there and sent by the node – the phone
+    can disconnect meanwhile; unfinished jobs continue after a restart
+  - After an ESP32 restart the node sets the last radio values again
+- App: **Bluetooth connection to the node** (Android). Pair the node once; both modems, GPS and the
+  mailbox run over one Bluetooth connection, so the phone's Wi-Fi and mobile data stay free
+- App + node: **find the quietest frequency** (Radio → LR radio). The node measures for a chosen time
+  (1–60 minutes) how often each channel in the 70 cm band or the licence-free range is busy; the app
+  lists the quietest with band plan notes and applies one, or an own frequency
+
 - App: safer file and picture transfer over LR radio, node to node
   - The sender announces a file three times first (name, size, number of parts, airtime) and sends it
     with the highest permitted power for the frequency; afterwards the power goes back to the setting.

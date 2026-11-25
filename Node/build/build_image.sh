@@ -266,7 +266,7 @@ done
 chk "serial-getty@ttyGS0 enabled" "[ -L $MNT/etc/systemd/system/getty.target.wants/serial-getty@ttyGS0.service ]"
 chk "networkd-wait-online aus" "! chroot $MNT systemctl is-enabled systemd-networkd-wait-online"
 chk "aw859a-wifi aktiv" "[ \"\$(chroot $MNT systemctl is-enabled aw859a-wifi 2>/dev/null)\" = enabled ] || ! [ -e $MNT/lib/systemd/system/aw859a-wifi.service ]"
-chk "py_compile (Debian-Python im Image)" "chroot $MNT python3 -m py_compile /opt/lr2021/lr2021d.py /opt/lr2021/lrmodem.py /opt/lr2021/serialbridge.py"
+chk "py_compile (Debian-Python im Image)" "chroot $MNT python3 -m py_compile /opt/lr2021/lr2021d.py /opt/lr2021/lrmodem.py /opt/lr2021/serialbridge.py /opt/lr2021/postbox.py"
 find "$MNT/opt/lr2021" -name __pycache__ -prune -exec rm -rf {} +
 chk "nft -c -f /etc/nftables.conf" "nft -c -f $MNT/etc/nftables.conf"
 chk "Keyfiles 600 root" "[ -z \"\$(find $MNT/etc/NetworkManager/system-connections -type f ! -perm 600)\" ]"
