@@ -38,7 +38,7 @@ from lrmodem import build_frame, parse_frame, open_port, LrModem, load_firmware,
 from postbox import Mailbox  # noqa: E402
 from serialbridge import run_bridge  # noqa: E402
 
-VERSION = "1.2.0"
+VERSION = "1.2.1"
 CONF_PATH = "/etc/lr2021/node.json"
 STATE_DIR = "/var/lib/lr2021"
 INSTALL_DIR = "/opt/lr2021"
@@ -715,22 +715,36 @@ class BtAgent:
             self._register_sdp()
             try:
                 p = subprocess.Popen(["bluetoothctl"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                     stderr=subprocess.STDOUT, text=True, bufsize=1)
+                                     stderr=subprocess.STDOUT, bufsize=0)
+
+                def cmd(c):
+                    p.stdin.write((c + "\n").encode())
+                    p.stdin.flush()
+
                 for c in ("power on", "system-alias %s" % self.name, "agent NoInputNoOutput", "default-agent",
                           "discoverable-timeout 0", "discoverable on", "pairable-timeout 0", "pairable on"):
-                    p.stdin.write(c + "\n")
-                p.stdin.flush()
+                    cmd(c)
                 self.state = "sichtbar als „%s“" % self.name
-                for line in p.stdout:
-                    line = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", line)
-                    if "(yes/no)" in line:
-                        p.stdin.write("yes\n")
-                        p.stdin.flush()
-                    m = re.search(r"Device ([0-9A-F:]{17}) (Paired|Bonded): yes", line)
-                    if m:
-                        p.stdin.write("trust %s\n" % m.group(1))
-                        p.stdin.flush()
+                # Rückfragen („Confirm passkey 123456 (yes/no):“, „Authorize service … (yes/no):“) kommen OHNE
+                # Zeilenende – deshalb stückweise lesen und im Puffer suchen, nicht zeilenweise
+                buf = ""
+                while True:
+                    d = os.read(p.stdout.fileno(), 4096)
+                    if not d:
+                        break
+                    buf += re.sub(r"\x1b\[[0-9;]*[A-Za-z]|\x01|\x02", "", d.decode("utf-8", "replace"))
+                    while "(yes/no)" in buf:
+                        before, buf = buf.split("(yes/no)", 1)
+                        cmd("yes")
+                        what = before.strip().splitlines()[-1] if before.strip() else ""
+                        log.info("Bluetooth: bestätigt – %s", what[-80:])
+                    for m in re.finditer(r"Device ([0-9A-F:]{17}) (Paired|Bonded): yes", buf):
+                        cmd("trust %s" % m.group(1))
                         log.info("Bluetooth: %s gekoppelt", m.group(1))
+                    if "\n" in buf:
+                        buf = buf[buf.rfind("\n") + 1:]   # nur die angefangene Zeile behalten
+                    if len(buf) > 4096:
+                        buf = buf[-1024:]
             except Exception as e:
                 log.warning("Bluetooth-Agent: %s", e)
             self.state = "neu starten …"
