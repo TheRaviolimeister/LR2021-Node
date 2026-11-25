@@ -58,17 +58,29 @@ class _SlotPanel extends StatelessWidget {
                 style: TextStyle(color: rc.muted, fontSize: 12.5)),
           ]),
         ),
-        if (s.connected)
-          OutlinedButton(onPressed: () => app.disconnect(s), child: Text(tr('Trennen')))
+        // über die Node: ein Knopf für beide Modems (eine Verbindung, zwei Kanäle)
+        if (app.sharedNode && s.role == 'B')
+          const SizedBox.shrink()
+        else if (s.connected)
+          OutlinedButton(
+              onPressed: () => app.sharedNode ? app.disconnectNode() : app.disconnect(s),
+              child: Text(app.sharedNode ? tr('Node trennen') : tr('Trennen')))
         else
           FilledButton(
-            onPressed: s.connecting ? null : () => app.connect(s),
+            onPressed: s.connecting ? null : () => app.sharedNode ? app.connectNode() : app.connect(s),
             style: FilledButton.styleFrom(backgroundColor: col, foregroundColor: const Color(0xFF11161C)),
-            child: Text(s.connecting ? tr('Verbinde …') : tr('Verbinden')),
+            child: Text(s.connecting ? tr('Verbinde …') : (app.sharedNode ? tr('Node verbinden') : tr('Verbinden'))),
           ),
       ]),
       const SizedBox(height: 12),
-      if (!s.connected) _ConnectBox(s),
+      if (app.sharedNode && s.role == 'B')
+        Text(
+            s.connected
+                ? tr('Über dieselbe Verbindung zur Node wie ESP32 A.')
+                : tr('Kommt mit, sobald die Node oben bei ESP32 A verbunden wird.'),
+            style: TextStyle(color: rc.muted, fontSize: 12.5))
+      else if (!s.connected)
+        _ConnectBox(s),
       if (s.error != null)
         Padding(
           padding: const EdgeInsets.only(top: 8),
@@ -114,10 +126,11 @@ class _ConnectBox extends StatelessWidget {
             ],
             selected: {s.kind},
             showSelectedIcon: false,
-            onSelectionChanged: (v) {
-              s.kind = v.first;
+            onSelectionChanged: (v) async {
+              app.setKind(s, v.first);
               if (s.kind == TransportKind.usb || s.kind == TransportKind.node || s.kind == TransportKind.bluetooth) {
-                app.refreshPorts(s);
+                await app.refreshPorts(s);
+                app.setPort(s, s.port);
               }
               app.changed();
             },
@@ -139,10 +152,7 @@ class _ConnectBox extends StatelessWidget {
                           overflow: TextOverflow.ellipsis),
                     ),
                 ],
-                onChanged: (v) {
-                  s.port = s.ports.where((p) => p.id == v).firstOrNull;
-                  app.changed();
-                },
+                onChanged: (v) => app.setPort(s, s.ports.where((p) => p.id == v).firstOrNull),
               ),
             ),
             const SizedBox(width: 8),

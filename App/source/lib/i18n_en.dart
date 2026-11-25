@@ -870,4 +870,10 @@ const Map<String, String> enTexts = {
   'Bitte eine Frequenz in MHz eingeben, z. B. 433.650': 'Please enter a frequency in MHz, e.g. 433.650',
   'Schließen': 'Close',
   'Belegt: {0}': 'Busy: {0}',
+  'Node verbinden': 'Connect node',
+  'Node trennen': 'Disconnect node',
+  'Über dieselbe Verbindung zur Node wie ESP32 A.': 'Over the same connection to the node as ESP32 A.',
+  'Kommt mit, sobald die Node oben bei ESP32 A verbunden wird.': 'Comes along as soon as the node is connected above at ESP32 A.',
+  'Bluetooth-Berechtigung „Geräte in der Nähe“ fehlt – bitte erlauben (Android-Einstellungen → Apps → LR2021 Node → Berechtigungen).':
+      'Bluetooth permission “Nearby devices” is missing – please allow it (Android settings → Apps → LR2021 Node → Permissions).',
 };

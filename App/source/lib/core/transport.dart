@@ -40,9 +40,39 @@ String transportKindName(TransportKind k) => switch (k) {
 bool viaNode(TransportKind k) => k == TransportKind.node || k == TransportKind.network || k == TransportKind.bluetooth;
 
 // ---------------------------------------------------------------- Bluetooth (Android, zur Node)
+/// Android 12+: „Geräte in der Nähe“ – Verbinden UND Suchen (beim Verbinden bricht Android eine laufende Suche ab,
+/// das braucht BLUETOOTH_SCAN). Fragt nach, falls noch nicht erlaubt.
+Future<void>? _btPermRunning;
+Future<void> ensureBtPermissions() async {
+  if (!Platform.isAndroid) return;
+  // A und B verbinden gleichzeitig – nur eine Anfrage auf einmal (sonst wirft das Paket „pendingOperation“)
+  final running = _btPermRunning;
+  if (running != null) return running;
+  final f = _askBtPermissions();
+  _btPermRunning = f;
+  try {
+    await f;
+  } finally {
+    _btPermRunning = null;
+  }
+}
+
+Future<void> _askBtPermissions() async {
+  final bt = FlutterClassicBluetooth();
+  final want = {BtcPermission.connect, BtcPermission.scan};
+  var st = await bt.checkPermissions(permissions: want);
+  if (st != BtcPermissionStatus.granted && st != BtcPermissionStatus.notRequired) {
+    st = await bt.requestPermissions(permissions: want);
+  }
+  if (st != BtcPermissionStatus.granted && st != BtcPermissionStatus.notRequired) {
+    throw Exception(tr('Bluetooth-Berechtigung „Geräte in der Nähe“ fehlt – bitte erlauben (Android-Einstellungen → Apps → LR2021 Node → Berechtigungen).'));
+  }
+}
+
 /// Gekoppelte Bluetooth-Geräte; Nodes („LR2021-…“) zuerst.
 Future<List<PortChoice>> listBtNodes() async {
   if (!Platform.isAndroid) return const [];
+  await ensureBtPermissions();
   final devs = await FlutterClassicBluetooth().getPairedDevices();
   final out = [
     for (final d in devs)
@@ -65,6 +95,7 @@ class BtTransport implements Transport {
   }
 
   static Future<BtTransport> open(PortChoice dev) async {
+    await ensureBtPermissions();
     final c = await FlutterClassicBluetooth()
         .connect(address: dev.id, uuid: '00001101-0000-1000-8000-00805F9B34FB', timeout: const Duration(seconds: 15));
     return BtTransport._(c, dev.label.split('  ·  ').first);

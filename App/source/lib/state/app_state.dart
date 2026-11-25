@@ -562,6 +562,49 @@ class NodeApp extends ChangeNotifier {
     }
   }
 
+  /// Beide Modems hängen an derselben Node-Verbindung (Bluetooth, Netzwerk, Node-Kabel)?
+  bool get sharedNode => viaNode(a.kind) && a.kind == b.kind;
+
+  /// Verbindungsart für ein Modul wählen; über die Node gilt sie für beide (eine Verbindung, zwei Kanäle).
+  void setKind(ModemSlot s, TransportKind k) {
+    s.kind = k;
+    if (viaNode(k)) {
+      final o = s == a ? b : a;
+      if (!o.connected) {
+        o.kind = k;
+        o.port = s.port;
+      }
+    }
+    notifyListeners();
+  }
+
+  void setPort(ModemSlot s, PortChoice? p) {
+    s.port = p;
+    if (viaNode(s.kind)) {
+      final o = s == a ? b : a;
+      if (!o.connected && o.kind == s.kind) {
+        o.ports = s.ports;
+        o.port = p;
+      }
+    }
+    notifyListeners();
+  }
+
+  /// Die Node verbinden: A und B über dieselbe Verbindung.
+  Future<void> connectNode() async {
+    b
+      ..kind = a.kind
+      ..port = a.port
+      ..ports = a.ports;
+    await connect(a);
+    if (!b.connected && !b.connecting) await connect(b);
+  }
+
+  Future<void> disconnectNode() async {
+    await disconnect(a);
+    await disconnect(b);
+  }
+
   void _moveClient(ModemSlot from, ModemSlot to) {
     to.client = from.client;
     to.info = from.info;

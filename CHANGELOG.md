@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.7.6
+
+- App: Bluetooth to the node asks for the Android permission "Nearby devices" (scan and connect) before
+  connecting – before, Android refused the connection with "Need BLUETOOTH_SCAN permission"
+- App: over the node (Bluetooth, network, node cable) both modems share one connection – one button
+  "Connect node" / "Disconnect node", the connection type and node apply to both
+- Node software lr2021d 1.2.1: pairing over Bluetooth is confirmed by the node itself (no PIN); before,
+  the confirmation prompt of the phone was not answered
+
 ## 1.7.5
 
 - Node software lr2021d 1.2.0 with a **mailbox**: the node keeps working without the phone
