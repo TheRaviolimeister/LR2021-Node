@@ -404,6 +404,26 @@ class _SettingsPageState extends State<SettingsPage> {
               _save();
             }),
           ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: Text(tr('Dateien ankündigen und laut senden')),
+            subtitle: Text(tr('Vor einem Bild oder einer Datei kommt dreimal eine Ankündigung, gesendet wird mit der höchsten erlaubten Leistung. Andere Nodes halten ihre eigenen Sendungen so lange zurück.')),
+            value: st.lrFileLoud,
+            onChanged: (v) => setState(() {
+              st.lrFileLoud = v;
+              _save();
+            }),
+          ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: Text(tr('Bei Dateien warten, bis der Kanal frei ist')),
+            subtitle: Text(tr('Vor jedem Dateiteil wird der Pegel gemessen: sendet gerade jemand anderes laut auf der Frequenz (auch kein LoRa), wird gewartet, bis er fertig ist.')),
+            value: st.lrFileClear,
+            onChanged: (v) => setState(() {
+              st.lrFileClear = v;
+              _save();
+            }),
+          ),
           DropdownButtonFormField<int>(
             value: [0, 10, 30, 60].contains(st.lrBeaconMin) ? st.lrBeaconMin : 0,
             decoration: InputDecoration(labelText: tr('Bake mit Rufzeichen')),

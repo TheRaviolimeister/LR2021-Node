@@ -55,6 +55,10 @@ class ModemSlot {
   bool on24 = false; // gerade auf dem 2,4-GHz-Dateikanal
   bool send24 = false; // sendet selbst gerade eine Datei dort (dann steuert der Sender die Rückkehr)
   Timer? _back24;
+  bool loud = false; // sendet gerade eine Datei mit der höchsten erlaubten Leistung
+  DateTime? quietUntil; // fremde Dateiübertragung läuft: eigene Sendungen (außer Datei-Rückmeldungen) zurückhalten
+  Timer? _quietTimer;
+  final ChannelWatch watch = ChannelWatch(); // Grundrauschen, um laute Fremdsender zu erkennen
 
   bool get connected => client != null && !client!.isClosed;
   String get band => role == 'A' ? tr('HF 868') : tr('LF 433');
@@ -67,7 +71,9 @@ class _TxJob {
   final void Function(TxDoneEvent ev)? done;
   final Future<void> Function()? action; // statt zu senden: z. B. umschalten (in der Reihenfolge der Warteschlange)
   final int gapMs; // Pause nach dem Senden
-  _TxJob(this.data, this.what, this.done, {this.action, this.gapMs = 150});
+  final bool file; // gehört zu einer Dateiübertragung: Kanal vorher prüfen, wird nie zurückgehalten
+  int busyTries = 0;
+  _TxJob(this.data, this.what, this.done, {this.action, this.gapMs = 150, this.file = false});
 }
 
 class NodeApp extends ChangeNotifier {
@@ -717,6 +723,7 @@ class NodeApp extends ChangeNotifier {
     final m = modeOf(s);
     final cfg = cfgFor(s, m);
     s.on24 = false;
+    s.loud = false;
     s._back24?.cancel();
     try {
       s.status = tr('stelle ein …');
@@ -788,6 +795,7 @@ class NodeApp extends ChangeNotifier {
     try {
       final v = await s.client!.rssi();
       s.liveRssi = v;
+      s.watch.busy(v); // lernt dabei das Grundrauschen
       notifyListeners();
     } catch (_) {}
   }
@@ -842,12 +850,73 @@ class NodeApp extends ChangeNotifier {
     _pump(s);
   }
 
+  /// Paket einer Dateiübertragung (Teil, Ankündigung, Rückmeldung): Kanal wird vorher geprüft, und es wird auch
+  /// gesendet, während eigene Sendungen wegen einer fremden Übertragung zurückgehalten werden.
+  void _enqueueFile(ModemSlot s, Uint8List data, String what, [void Function(TxDoneEvent ev)? done, int gapMs = 150]) {
+    s._queue.add(_TxJob(data, what, done, gapMs: gapMs, file: true));
+    _pump(s);
+  }
+
+  bool _quiet(ModemSlot s) => s.quietUntil != null && DateTime.now().isBefore(s.quietUntil!);
+
+  /// Eine fremde Datei wird gesendet: eigene Sendungen auf diesem Modul bis [until] zurückhalten (höchstens 30 min).
+  void _holdFor(ModemSlot s, DateTime until) {
+    final max = DateTime.now().add(const Duration(minutes: 30));
+    if (until.isAfter(max)) until = max;
+    if (s.quietUntil != null && s.quietUntil!.isAfter(until)) return;
+    s.quietUntil = until;
+    s._quietTimer?.cancel();
+    s._quietTimer = Timer(until.difference(DateTime.now()) + const Duration(milliseconds: 50), () {
+      if (!_quiet(s)) {
+        s.quietUntil = null;
+        _pump(s);
+      }
+    });
+  }
+
+  /// Vor einem Dateiteil: warten, solange jemand anderes laut auf dem Kanal sendet (Pegel deutlich über dem
+  /// Grundrauschen). Höchstens [maxS] Sekunden, danach wird trotzdem gesendet.
+  Future<void> _waitClear(ModemSlot s, {int maxS = 60}) async {
+    final c = s.client;
+    if (c == null || s.kind == TransportKind.demo || s.on24) return;
+    final t0 = DateTime.now();
+    var waited = false;
+    while (DateTime.now().difference(t0).inSeconds < maxS) {
+      double v;
+      try {
+        v = await c.rssi();
+      } catch (_) {
+        return;
+      }
+      s.liveRssi = v;
+      if (!s.watch.busy(v)) {
+        if (waited) _log(s.role, LogKind.info, tr('Kanal wieder frei – sende weiter'));
+        return;
+      }
+      if (!waited) {
+        waited = true;
+        _log(s.role, LogKind.info,
+            tr('Kanal belegt ({0} dBm, Rauschen {1} dBm) – warte, bis der andere Sender fertig ist',
+                [v.toStringAsFixed(0), s.watch.floor?.toStringAsFixed(0) ?? '?']));
+        notifyListeners();
+      }
+      await Future<void>.delayed(Duration(milliseconds: 250 + _rnd.nextInt(500)));
+    }
+    _log(s.role, LogKind.info, tr('Kanal seit {0} s belegt – sende trotzdem', [maxS]));
+  }
+
   Future<void> _pump(ModemSlot s) async {
     if (s._txRunning) return;
     s._txRunning = true;
     try {
       while (s._queue.isNotEmpty && s.connected) {
-        final job = s._queue.removeAt(0);
+        var idx = 0;
+        if (_quiet(s)) {
+          // fremde Dateiübertragung: nur Dateipakete und Umschaltungen, der Rest wartet
+          idx = s._queue.indexWhere((j) => j.file || j.action != null);
+          if (idx < 0) break;
+        }
+        final job = s._queue.removeAt(idx);
         if (job.action != null) {
           try {
             await job.action!();
@@ -856,14 +925,26 @@ class NodeApp extends ChangeNotifier {
           }
           continue;
         }
+        final careful = job.file && settings.lrFileClear;
+        if (careful) await _waitClear(s);
+        if (!s.connected) break;
         s.transmitting = true;
         notifyListeners();
         _log(s.role, LogKind.tx, job.what, '${job.data.length} B  ${hex(job.data)}');
         TxDoneEvent ev;
         try {
-          ev = await s.client!.txWait(job.data, lbt: settings.lbt);
+          ev = await s.client!.txWait(job.data, lbt: settings.lbt || careful);
         } catch (e) {
           ev = TxDoneEvent(0, e is ModemError ? e.status : -11, 0);
+        }
+        if (job.file && ev.status == -10 && job.busyTries < 10) {
+          // Kanal belegt (anderes LoRa-Signal): später noch einmal, nichts geht verloren
+          job.busyTries++;
+          s.transmitting = false;
+          s._queue.insert(0, job);
+          _log(s.role, LogKind.info, tr('Kanal belegt – {0} wird gleich wiederholt', [job.what]));
+          await Future<void>.delayed(Duration(milliseconds: 1000 + _rnd.nextInt(2000)));
+          continue;
         }
         s.transmitting = false;
         s.lastTx = DateTime.now();
@@ -1092,6 +1173,7 @@ class NodeApp extends ChangeNotifier {
     messages.add(msg);
     final x = _OutXfer(xfer, chunks, msg, s);
     _outX[xfer] = x;
+    if (settings.lrFileLoud) _announce(x, data.length, mime, name);
     if (fast) {
       // Ankündigung auf dem normalen Kanal, dann alles auf 2,4 GHz (einfach; Fehlendes kommt über die Rückmeldungen)
       final cfg = file24Cfg(s);
@@ -1099,7 +1181,7 @@ class NodeApp extends ChangeNotifier {
       s.send24 = true;
       final offer = FileOffer(xfer, cfg.freqHz, cfg.bwHz, cfg.sf, cfg.cr, chunks.length, data.length).build();
       msg.info = tr('kündige die Übertragung auf 2,4 GHz an …');
-      _enqueue(s, LrPacket.build(LrType.fileOffer, me, _newId(), _cut(settings.callsign.trim().toUpperCase(), 12), '', offer),
+      _enqueueFile(s, LrPacket.build(LrType.fileOffer, me, _newId(), _cut(settings.callsign.trim().toUpperCase(), 12), '', offer),
           tr('Datei {0}: Ankündigung 2,4 GHz', [name]));
       _enqueueAction(s, tr('Wechsel auf 2,4 GHz'), () async {
         await Future<void>.delayed(const Duration(milliseconds: 1200)); // Empfänger stellen in der Zeit um
@@ -1114,43 +1196,143 @@ class NodeApp extends ChangeNotifier {
     return null;
   }
 
+  /// Vor der Datei: auf volle erlaubte Leistung, dann dreimal ankündigen (Name, Größe, Teile, Sendezeit).
+  void _announce(_OutXfer x, int size, String mime, String name) {
+    final s = x.slot;
+    final me = settings.myNum == 0 ? 0x4C520000 : settings.myNum;
+    final call = _cut(settings.callsign.trim().toUpperCase(), 12);
+    final air = (fileAirtimeS(size) ?? 0).ceil();
+    _enqueueAction(s, tr('volle Leistung für die Datei'), () => _setLoud(s, true));
+    final body = FileAnnounce(x.xfer, size, x.chunks.length, air, mime, name).build();
+    x.msg.info = tr('kündige die Datei an …');
+    for (var k = 1; k <= 3; k++) {
+      _enqueueFile(s, LrPacket.build(LrType.fileAnnounce, me, _newId(), call, '', body),
+          tr('Datei {0}: Ankündigung {1}/3', [name, k]), null, 700);
+    }
+  }
+
+  /// LR-Funk-Modul für eine Datei auf die höchste erlaubte Leistung stellen bzw. zurück auf die eingestellte.
+  Future<void> _setLoud(ModemSlot s, bool on) async {
+    final c = s.client;
+    if (c == null || s.kind == TransportKind.demo || s.on24 || modeOf(s) != RadioMode.lrfunk || on == s.loud) return;
+    final cfg = cfgFor(s, RadioMode.lrfunk);
+    if (on) {
+      final lim = limitFor(s, RadioMode.lrfunk);
+      if (!lim.allowed || cfg.powerDbm >= lim.maxDbm) return; // steht schon auf dem Maximum
+      cfg.powerDbm = lim.maxDbm;
+    }
+    try {
+      await c.setLora(cfg);
+      await c.rxStart();
+      s.loud = on;
+      try {
+        s.config = await c.config();
+      } catch (_) {}
+      _log(s.role, LogKind.info,
+          on ? tr('Datei: volle erlaubte Leistung, {0} dBm', [cfg.powerDbm]) : tr('Datei fertig: zurück auf {0} dBm', [cfg.powerDbm]));
+    } catch (e) {
+      _log(s.role, LogKind.err, tr('Leistung umstellen fehlgeschlagen'), '$e');
+    }
+    notifyListeners();
+  }
+
+  /// Leistung zurück, wenn auf diesem Modul keine eigene Datei mehr läuft.
+  void _loudOff(ModemSlot s) {
+    if (_outX.values.any((o) => o.slot == s && !o.finished)) return;
+    _enqueueAction(s, tr('Leistung zurück'), () => _setLoud(s, false));
+  }
+
   void _sendChunks(_OutXfer x, List<int> idx) {
     final me = settings.myNum == 0 ? 0x4C520000 : settings.myNum;
     final call = _cut(settings.callsign.trim().toUpperCase(), 12);
-    var left = idx.length;
+    x.inFlight += idx.length;
     for (final i in idx) {
       final pkt = LrPacket.build(LrType.file, me, _newId(), call, '', x.chunks[i]);
-      _enqueue(x.slot, pkt, tr('Datei {0}: Teil {1}/{2}', [x.msg.text, i + 1, x.chunks.length]), (ev) {
+      _enqueueFile(x.slot, pkt, tr('Datei {0}: Teil {1}/{2}', [x.msg.text, i + 1, x.chunks.length]), (ev) {
         x.sent.add(i);
-        x.msg.progress = x.sent.length / x.chunks.length * (x.round == 0 ? 1 : 1);
+        if (x.round == 0) x.msg.progress = x.sent.length / x.chunks.length;
         if (!ev.ok) x.msg.info = statusText(ev.status);
-        left--;
-        if (left == 0) _awaitFileAck(x);
+        x.inFlight--;
+        if (x.inFlight == 0 && !x.finished) {
+          // Runde gesendet: inzwischen gemeldete Lücken gleich nachschicken, sonst auf die Empfänger warten
+          if (x.pending.isNotEmpty) {
+            _resend(x);
+          } else {
+            _awaitFileAck(x);
+          }
+        }
         notifyListeners();
       }, x.fast ? 10 : 150);
     }
     x.msg.status = MsgStatus.pending;
   }
 
+  /// Fehlende Teile (von allen Empfängern zusammen) noch einmal senden – so lange, bis alle vollständig sind oder
+  /// mehrere Runden hintereinander nichts besser wird.
+  void _resend(_OutXfer x) {
+    final miss = x.pending.toList()..sort();
+    x.pending.clear();
+    if (miss.isEmpty || x.finished) return;
+    final total = x.missingBy.values.fold<int>(0, (a, b) => a + b);
+    if (!x.policy.next(total > 0 ? total : miss.length)) {
+      x.msg.info = tr('unvollständig bei {0} – es wird nicht mehr besser, Übertragung beendet', [x.missingBy.keys.join(', ')]);
+      _finishOut(x);
+      return;
+    }
+    x.round++;
+    x.probes = 0;
+    x.msg.info = tr('Runde {0}: {1} fehlende Teile werden nachgesendet', [x.round, miss.length]);
+    _sendChunks(x, miss);
+  }
+
   void _awaitFileAck(_OutXfer x) {
     x.timer?.cancel();
     x.msg.status = MsgStatus.sent;
-    x.msg.info = tr('gesendet, warte auf Bestätigung …');
-    x.timer = Timer(Duration(seconds: x.fast ? 2 : 8), () {
-      if (x.finished) return;
-      if (x.probes >= 3) {
-        x.finished = true;
-        x.msg.info = x.ackedBy.isEmpty ? tr('keine Bestätigung') : tr('empfangen von {0}', [x.ackedBy.join(', ')]);
-        _outX.remove(x.xfer);
-        if (x.fast) _endFast(x);
-        _scheduleSave();
-        notifyListeners();
+    if (x.ackedBy.isEmpty) x.msg.info = tr('gesendet, warte auf Bestätigung …');
+    x.timer = Timer(Duration(seconds: x.fast ? 2 : 8 + x.probes * 2), () {
+      if (x.finished || x.inFlight > 0) return;
+      if (x.pending.isNotEmpty) {
+        _resend(x);
         return;
       }
-      // Nachfragen: letztes Stück noch einmal senden, darauf antworten die Empfänger
+      if (x.probes >= 5 || (x.ackedBy.isNotEmpty && x.missingBy.isEmpty)) {
+        _finishOut(x);
+        return;
+      }
+      // Nachfragen: letztes Stück noch einmal senden, darauf antworten die Empfänger (fertig oder mit Lücken)
       x.probes++;
       _sendChunks(x, [x.chunks.length - 1]);
     });
+  }
+
+  /// Eigene Übertragung beenden (alle fertig, oder es antwortet niemand mehr). Sie bleibt noch 2 min bekannt:
+  /// meldet sich ein Empfänger danach noch mit Lücken, geht es weiter.
+  void _finishOut(_OutXfer x) {
+    if (x.finished) return;
+    x.finished = true;
+    x.timer?.cancel();
+    x.collect?.cancel();
+    x.collect = null;
+    final open = x.missingBy.keys.where((w) => !x.ackedBy.contains(w)).toList();
+    if (x.ackedBy.isNotEmpty) {
+      x.msg.status = MsgStatus.acked;
+      x.msg.progress = 1;
+      x.msg.info = open.isEmpty
+          ? tr('vollständig empfangen von {0}', [x.ackedBy.join(', ')])
+          : tr('vollständig bei {0}, unvollständig bei {1}', [x.ackedBy.join(', '), open.join(', ')]);
+    } else if (open.isEmpty) {
+      x.msg.info = tr('keine Bestätigung');
+    }
+    if (x.fast) {
+      _endFast(x);
+    } else {
+      _loudOff(x.slot);
+    }
+    Timer(const Duration(minutes: 2), () {
+      if (x.finished && identical(_outX[x.xfer], x)) _outX.remove(x.xfer);
+    });
+    _scheduleSave();
+    notifyListeners();
   }
 
   void _onFileAck(LrPacket p, String who) {
@@ -1160,19 +1342,30 @@ class NodeApp extends ChangeNotifier {
     if (x == null) return;
     if (a.done) {
       if (!x.ackedBy.contains(who)) x.ackedBy.add(who);
+      x.missingBy.remove(who);
       x.msg.status = MsgStatus.acked;
-      x.msg.progress = 1;
-      x.msg.info = tr('empfangen von {0}', [x.ackedBy.join(', ')]);
-      x.finished = true;
-      x.timer?.cancel();
-      if (x.fast) _endFast(x);
+      x.msg.info = tr('vollständig empfangen von {0}', [x.ackedBy.join(', ')]);
+      if (!x.finished && x.missingBy.isEmpty && x.pending.isEmpty && x.inFlight == 0) _finishOut(x);
       _scheduleSave();
-    } else if (a.missing.isNotEmpty && x.round < 8 + x.chunks.length ~/ 200) {
-      // höchstens 90 fehlende Teile pro Rückmeldung: große Dateien brauchen mehr Runden
-      x.round++;
+    } else if (a.missing.isNotEmpty) {
+      if (x.finished) {
+        // meldet sich nach dem Ende noch mit Lücken: weitermachen (nicht auf dem 2,4-GHz-Kanal, der ist schon zu)
+        if (x.fast) return;
+        x.finished = false;
+        x.policy.stall = 0;
+        if (settings.lrFileLoud) _enqueueAction(x.slot, tr('volle Leistung für die Datei'), () => _setLoud(x.slot, true));
+      }
+      x.missingBy[who] = a.total;
+      x.pending.addAll(a.missing.where((i) => i < x.chunks.length));
       x.timer?.cancel();
-      x.msg.info = tr('{0} Teile fehlen bei {1} – sende erneut', [a.missing.length, who]);
-      _sendChunks(x, a.missing.where((i) => i < x.chunks.length).toList());
+      x.msg.info = tr('{0} Teile fehlen bei {1} – sende erneut', [a.total, who]);
+      // kurz sammeln, falls noch andere Empfänger melden; läuft gerade eine Runde, wird danach nachgeschickt
+      if (x.inFlight == 0) {
+        x.collect ??= Timer(Duration(milliseconds: x.fast ? 300 : 1500), () {
+          x.collect = null;
+          if (x.inFlight == 0) _resend(x);
+        });
+      }
     }
     notifyListeners();
   }
@@ -1249,8 +1442,12 @@ class NodeApp extends ChangeNotifier {
         ..round = 0
         ..probes = 0;
       x.sent.clear();
+      x.pending.clear();
+      x.missingBy.clear();
+      x.policy.reset();
       _outX[x.xfer] = x;
       x.msg.info = tr('keine Antwort auf 2,4 GHz – sende auf 70 cm');
+      if (settings.lrFileLoud) _enqueueAction(s, tr('volle Leistung für die Datei'), () => _setLoud(s, true));
       _sendChunks(x, settings.lrFileTwice ? fileSendOrder(x.chunks.length) : [for (var i = 0; i < x.chunks.length; i++) i]);
     }
   }
@@ -1273,6 +1470,71 @@ class NodeApp extends ChangeNotifier {
     _touch24(s, seconds: 8);
   }
 
+  _InXfer _inFor(String xkey, String key, String who, RxEvent e, int xfer, int count, int size) {
+    return _inX.putIfAbsent(xkey, () {
+      final m = Message(
+          chat: 'lr',
+          from: key,
+          fromName: who,
+          text: tr('Datei wird empfangen …'),
+          at: e.at,
+          mine: false,
+          status: MsgStatus.received,
+          pktId: xfer,
+          rssi: e.rssi,
+          snr: e.snr,
+          hops: 0)
+        ..fileSize = size;
+      messages.add(m);
+      if (openChat != 'lr') unread['lr'] = (unread['lr'] ?? 0) + 1;
+      return _InXfer(xfer, count, size, m);
+    });
+  }
+
+  /// Ankündigung einer Datei: Übertragung anlegen, eigene Sendungen für die angekündigte Zeit zurückhalten.
+  void _onFileAnnounce(ModemSlot s, LrPacket p, String key, String who, RxEvent e) {
+    final a = FileAnnounce.parse(p.body);
+    if (a == null) return;
+    final xkey = '$key:${a.xfer}';
+    if (_doneX.contains(xkey)) return;
+    final x = _inFor(xkey, key, who, e, a.xfer, a.count, a.size);
+    if (x.name.isEmpty) {
+      x.name = a.name;
+      x.mime = a.mime;
+      x.msg.mime = a.mime;
+    }
+    _holdFor(s, DateTime.now().add(Duration(seconds: (a.airtimeS * 1.5).ceil() + 20)));
+    if (!x.announced) {
+      x.announced = true;
+      x.msg.info = tr('{0} kündigt an: {1} ({2} KB, {3} Teile, ca. {4} s)',
+          [who, a.name, (a.size / 1024).toStringAsFixed(0), a.count, a.airtimeS]);
+      _log(s.role, LogKind.rx, tr('{0} kündigt eine Datei an – eigene Sendungen warten', [who]), _sig(e));
+      if (settings.sound) SystemSound.play(SystemSoundType.alert);
+    }
+    // kommt danach gar nichts an: nach der angekündigten Zeit melden, dass alles fehlt
+    if (x.parts.isEmpty) {
+      x.timer?.cancel();
+      x.timer = Timer(Duration(seconds: a.airtimeS + 15), () => _nack(s, xkey, x));
+    }
+    notifyListeners();
+  }
+
+  /// Fehlende Teile melden – und nachhaken, solange vom Sender nichts mehr kommt (höchstens 8-mal hintereinander).
+  void _nack(ModemSlot s, String xkey, _InXfer x) {
+    if (!identical(_inX[xkey], x)) return;
+    final miss = [for (var i = 0; i < x.count; i++) if (!x.parts.containsKey(i)) i];
+    if (miss.isEmpty) return;
+    if (x.nacks >= 8) {
+      x.msg.info = tr('{0} von {1} Teilen – der Sender antwortet nicht mehr', [x.parts.length, x.count]);
+      notifyListeners();
+      return;
+    }
+    x.nacks++;
+    _sendFileAck(s, x.xfer, false, miss);
+    x.timer?.cancel();
+    x.timer = Timer(Duration(seconds: 10 + _rnd.nextInt(6) + (miss.length > 30 ? 10 : 0)), () => _nack(s, xkey, x));
+  }
+
   void _onFileChunk(ModemSlot s, LrPacket p, String key, String who, RxEvent e) {
     final c = FileChunk.parse(p.body);
     if (c == null) return;
@@ -1282,48 +1544,37 @@ class NodeApp extends ChangeNotifier {
       if (c.index == c.count - 1) _sendFileAck(s, c.xfer, true, const []);
       return;
     }
-    final x = _inX.putIfAbsent(xkey, () {
-      final m = Message(
-          chat: 'lr',
-          from: key,
-          fromName: who,
-          text: tr('Datei wird empfangen …'),
-          at: e.at,
-          mine: false,
-          status: MsgStatus.received,
-          pktId: c.xfer,
-          rssi: e.rssi,
-          snr: e.snr,
-          hops: 0)
-        ..fileSize = c.size;
-      messages.add(m);
-      if (openChat != 'lr') unread['lr'] = (unread['lr'] ?? 0) + 1;
-      return _InXfer(c.xfer, c.count, c.size, m);
-    });
+    final x = _inFor(xkey, key, who, e, c.xfer, c.count, c.size);
     if (c.index == 0) {
       x.name = c.name ?? '';
       x.mime = c.mime ?? '';
       x.msg.mime = x.mime;
     }
     x.parts[c.index] = c.data;
+    x.nacks = 0;
     x.msg.progress = x.parts.length / x.count;
     x.msg.info = tr('{0} von {1} Teilen', [x.parts.length, x.count]);
     x.timer?.cancel();
+    // solange Teile kommen, bleibt der Kanal für diese Übertragung frei
+    _holdFor(s, DateTime.now().add(const Duration(seconds: 15)));
     if (x.parts.length == x.count) {
       unawaited(_finishIn(s, xkey, x));
       return;
     }
     // nach dem letzten Stück (oder 4 s Pause) melden, was fehlt
-    x.timer = Timer(Duration(milliseconds: c.index == c.count - 1 ? 600 + _rnd.nextInt(900) : 4000), () {
-      final miss = [for (var i = 0; i < x.count; i++) if (!x.parts.containsKey(i)) i];
-      _sendFileAck(s, c.xfer, false, miss);
-    });
+    x.timer = Timer(Duration(milliseconds: c.index == c.count - 1 ? 600 + _rnd.nextInt(900) : 4000), () => _nack(s, xkey, x));
     notifyListeners();
   }
 
   Future<void> _finishIn(ModemSlot s, String xkey, _InXfer x) async {
     _inX.remove(xkey);
     _doneX.add(xkey);
+    x.timer?.cancel();
+    // Übertragung fertig: nur noch kurz zurückhalten (andere Empfänger melden sich evtl. noch)
+    if (_quiet(s) && !_inX.values.any((o) => o.parts.length < o.count)) {
+      s.quietUntil = null;
+      _holdFor(s, DateTime.now().add(const Duration(seconds: 5)));
+    }
     final b = BytesBuilder();
     for (var i = 0; i < x.count; i++) {
       b.add(x.parts[i]!);
@@ -1364,7 +1615,7 @@ class NodeApp extends ChangeNotifier {
     final me = settings.myNum == 0 ? 0x4C520000 : settings.myNum;
     final pkt = LrPacket.build(LrType.fileAck, me, _newId(), _cut(settings.callsign.trim().toUpperCase(), 12), '',
         FileAck.build(xfer, done, missing));
-    _enqueue(s, pkt, done ? tr('Datei bestätigt') : tr('Datei: {0} Teile fehlen', [missing.length]));
+    _enqueueFile(s, pkt, done ? tr('Datei vollständig – bestätigt') : tr('Datei: {0} Teile fehlen', [missing.length]));
   }
 
   void sendBeacon() {
@@ -2109,6 +2360,9 @@ class NodeApp extends ChangeNotifier {
       case LrType.fileOffer:
         _onFileOffer(s, p, key, who);
         break;
+      case LrType.fileAnnounce:
+        _onFileAnnounce(s, p, key, who, e);
+        break;
     }
     _scheduleSave();
   }
@@ -2201,10 +2455,13 @@ class _OutXfer {
   final ModemSlot slot;
   final Set<int> sent = {};
   final List<String> ackedBy = [];
-  int round = 0, probes = 0;
+  final Set<int> pending = {}; // von Empfängern gemeldet, noch nicht nachgesendet
+  final Map<String, int> missingBy = {}; // Empfänger -> wie viele Teile ihm zuletzt fehlten
+  final ResendPolicy policy = ResendPolicy();
+  int round = 0, probes = 0, inFlight = 0;
   bool finished = false;
   bool fast = false, fallback = false; // 2,4-GHz-Dateikanal / danach auf 70 cm wiederholt
-  Timer? timer;
+  Timer? timer, collect;
   _OutXfer(this.xfer, this.chunks, this.msg, this.slot);
 }
 
@@ -2213,6 +2470,8 @@ class _InXfer {
   final Message msg;
   final Map<int, Uint8List> parts = {};
   String name = '', mime = '';
+  bool announced = false;
+  int nacks = 0; // Rückmeldungen ohne Antwort hintereinander
   Timer? timer;
   _InXfer(this.xfer, this.count, this.size, this.msg);
 }

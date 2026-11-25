@@ -49,7 +49,11 @@ connects to the node over Wi-Fi (“Network (Pi)”); USB connections are not av
 - **LR radio 70 cm:** own plain-text channel with callsign, automatic acknowledgement, **photos (camera
   or gallery), voice messages and files** up to 1 MB. Pictures in three sizes (480 / 800 / 1280 px) or
   the original, the dialog shows the airtime; voice messages AAC, up to 2 minutes (about 3 KB/s);
-  missing parts are requested selectively. Optionally files go over a **2.4 GHz file channel**
+  missing parts are requested selectively. A file is announced three times before it is sent and goes
+  out with the highest permitted power; other nodes hold back their own transmissions meanwhile. The
+  sender resends missing parts until every receiver reports the file complete, and before every part
+  it waits while someone else is transmitting loudly on the frequency (also non-LoRa signals).
+  Optionally files go over a **2.4 GHz file channel**
   (2425 MHz, SF5, 812 kHz, about ten times faster, shorter range): the sender announces the file on
   70 cm, both sides switch to 2.4 GHz for the transfer and come back afterwards; if nobody answers
   there, the file is sent on 70 cm. Needs 2.4 GHz antennas and the setting on both sides.

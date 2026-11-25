@@ -76,8 +76,9 @@ class FileChunk {
 class FileAck {
   final int xfer;
   final bool done;
-  final List<int> missing;
-  FileAck(this.xfer, this.done, this.missing);
+  final List<int> missing; // höchstens 90 Indizes
+  final int total; // wie viele Teile insgesamt fehlen (ältere Versionen senden das nicht: dann = missing.length)
+  FileAck(this.xfer, this.done, this.missing, [int? total]) : total = total ?? missing.length;
 
   static FileAck? parse(Uint8List body) {
     try {
@@ -85,12 +86,15 @@ class FileAck {
       final xfer = r.u32();
       final done = r.u8() != 0;
       final n = r.u8();
-      return FileAck(xfer, done, [for (var i = 0; i < n && r.remaining >= 2; i++) r.u16()]);
+      final m = [for (var i = 0; i < n && r.remaining >= 2; i++) r.u16()];
+      final total = r.remaining >= 2 ? r.u16() : m.length;
+      return FileAck(xfer, done, m, total < m.length ? m.length : total);
     } catch (_) {
       return null;
     }
   }
 
+  /// xfer u32 | fertig u8 | n u8 | Indizes u16 × n | insgesamt fehlend u16 (angehängt, ältere Empfänger ignorieren es)
   static Uint8List build(int xfer, bool done, List<int> missing) {
     final m = missing.take(LrFileProto.maxMissingPerAck).toList();
     final w = Wr()
@@ -100,6 +104,7 @@ class FileAck {
     for (final i in m) {
       w.u16(i);
     }
+    w.u16(missing.length.clamp(0, 0xFFFF));
     return w.toBytes();
   }
 }
@@ -129,6 +134,99 @@ class FileOffer {
     } catch (_) {
       return null;
     }
+  }
+}
+
+/// Ankündigung (Typ 7, auf dem normalen LR-Kanal, mehrmals vor der Übertragung):
+///   xfer u32 | gesamtgröße u32 | anzahl u16 | sendezeit_s u16 | mime_len u8 | mime | name_len u8 | name
+/// Empfänger legen die Übertragung schon an (und können fehlende Teile melden, auch wenn kein einziges Teil ankam)
+/// und halten für die angekündigte Zeit ihre eigenen Sendungen auf diesem Kanal zurück.
+class FileAnnounce {
+  final int xfer, size, count, airtimeS;
+  final String mime, name;
+  FileAnnounce(this.xfer, this.size, this.count, this.airtimeS, this.mime, this.name);
+
+  Uint8List build() {
+    final m = utf8.encode(mime.length > 40 ? mime.substring(0, 40) : mime);
+    var n = utf8.encode(name);
+    if (n.length > 60) n = n.sublist(n.length - 60);
+    return (Wr()
+          ..u32(xfer)
+          ..u32(size)
+          ..u16(count)
+          ..u16(airtimeS.clamp(0, 0xFFFF))
+          ..u8(m.length)
+          ..add(m)
+          ..u8(n.length)
+          ..add(n))
+        .toBytes();
+  }
+
+  static FileAnnounce? parse(Uint8List body) {
+    try {
+      final r = Rd(body);
+      final xfer = r.u32(), size = r.u32(), count = r.u16(), air = r.u16();
+      if (count == 0) return null;
+      final mime = utf8.decode(r.bytes(r.u8()), allowMalformed: true);
+      final name = utf8.decode(r.bytes(r.u8()), allowMalformed: true);
+      return FileAnnounce(xfer, size, count, air, mime, name);
+    } catch (_) {
+      return null;
+    }
+  }
+}
+
+/// Sender: wie lange noch nachgesendet wird. Solange die Empfänger weniger fehlende Teile melden als vorher, geht es
+/// weiter (bis die Datei vollständig ist); erst wenn mehrere Runden hintereinander nichts besser wird, oder nach sehr
+/// vielen Runden, wird aufgegeben.
+class ResendPolicy {
+  final int maxStall, maxRounds;
+  int rounds = 0, stall = 0;
+  int? best;
+  ResendPolicy({this.maxStall = 4, this.maxRounds = 80});
+
+  void reset() {
+    rounds = 0;
+    stall = 0;
+    best = null;
+  }
+
+  /// Eine Runde mit [missing] fehlenden Teilen (Summe über alle Empfänger) – weiter nachsenden?
+  bool next(int missing) {
+    rounds++;
+    if (best == null || missing < best!) {
+      best = missing;
+      stall = 0;
+    } else {
+      stall++;
+    }
+    return missing > 0 && stall < maxStall && rounds <= maxRounds;
+  }
+}
+
+/// Kanal frei? Merkt sich das Grundrauschen (RSSI-Werte, solange der Kanal ruhig ist) und meldet „belegt“, wenn der
+/// aktuelle Pegel deutlich darüber liegt – so werden auch Fremdsender erkannt, die kein LoRa sind (CAD sieht nur LoRa).
+class ChannelWatch {
+  final double marginDb;
+  final List<double> _quiet = [];
+  ChannelWatch({this.marginDb = 12});
+
+  double? get floor {
+    if (_quiet.isEmpty) return null;
+    final s = [..._quiet]..sort();
+    return s[(s.length * 0.2).floor().clamp(0, s.length - 1)];
+  }
+
+  /// Messwert einordnen; true = Kanal belegt.
+  bool busy(double rssi) {
+    final f = floor;
+    // ohne Vorwissen gilt nur ein wirklich starkes Signal als belegt
+    final isBusy = f != null ? rssi > f + marginDb : rssi > -85;
+    if (!isBusy) {
+      _quiet.add(rssi);
+      if (_quiet.length > 40) _quiet.removeAt(0);
+    }
+    return isBusy;
   }
 }
 

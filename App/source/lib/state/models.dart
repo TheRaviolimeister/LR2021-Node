@@ -73,6 +73,8 @@ class Settings {
   bool lrAutoAck = true;
   bool lrFileTwice = true; // Dateiteile zweimal senden (zeitversetzt)
   bool lrFile24 = false; // Dateien über den 2,4-GHz-Kanal (Antennen nötig, Gegenstelle muss es auch eingeschaltet haben)
+  bool lrFileLoud = true; // Dateien mehrmals ankündigen und mit der höchsten erlaubten Leistung senden
+  bool lrFileClear = true; // vor jedem Dateiteil warten, bis der Kanal frei ist (auch bei Fremdsendern)
   int lrBeaconMin = 0;
   int theme = 2; // 0 System, 1 hell, 2 dunkel
   String mapLayer = 'topo';
@@ -130,6 +132,8 @@ class Settings {
         'lrAck': lrAutoAck,
         'lrFile2': lrFileTwice,
         'lrFile24': lrFile24,
+        'lrFileLoud': lrFileLoud,
+        'lrFileClear': lrFileClear,
         'lrBeacon': lrBeaconMin,
         'theme': theme,
         'mapLayer': mapLayer,
@@ -199,6 +203,8 @@ class Settings {
     lrBeaconMin = j['lrBeacon'] as int? ?? 0;
     lrFileTwice = j['lrFile2'] as bool? ?? true;
     lrFile24 = j['lrFile24'] as bool? ?? false;
+    lrFileLoud = j['lrFileLoud'] as bool? ?? true;
+    lrFileClear = j['lrFileClear'] as bool? ?? true;
     theme = j['theme'] as int? ?? 2;
     mapLayer = j['mapLayer'] as String? ?? mapLayer;
     mapOffline = j['mapOff'] as bool? ?? false;

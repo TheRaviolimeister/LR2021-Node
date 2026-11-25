@@ -778,4 +778,31 @@ const Map<String, String> enTexts = {
   'keine Antwort auf 2,4 GHz – sende auf 70 cm': 'no answer on 2.4 GHz – sending on 70 cm',
   '{0} sendet eine Datei auf 2,4 GHz – der 2,4-GHz-Dateikanal ist hier aus': '{0} is sending a file on 2.4 GHz – the 2.4 GHz file channel is off here',
   '{0} sendet {1} Teile auf {2} MHz – wechsle dorthin': '{0} is sending {1} parts on {2} MHz – switching there',
+  'Dateien ankündigen und laut senden': 'Announce files and send them loud',
+  'Vor einem Bild oder einer Datei kommt dreimal eine Ankündigung, gesendet wird mit der höchsten erlaubten Leistung. Andere Nodes halten ihre eigenen Sendungen so lange zurück.':
+      'A picture or file is announced three times first and sent with the highest permitted power. Other nodes hold back their own transmissions meanwhile.',
+  'Bei Dateien warten, bis der Kanal frei ist': 'Wait for a free channel when sending files',
+  'Vor jedem Dateiteil wird der Pegel gemessen: sendet gerade jemand anderes laut auf der Frequenz (auch kein LoRa), wird gewartet, bis er fertig ist.':
+      'The signal level is measured before every file part: if someone else is transmitting loudly on the frequency (even non-LoRa), the node waits until they have finished.',
+  'Kanal wieder frei – sende weiter': 'Channel free again – continuing',
+  'Kanal belegt ({0} dBm, Rauschen {1} dBm) – warte, bis der andere Sender fertig ist':
+      'Channel busy ({0} dBm, noise {1} dBm) – waiting for the other transmitter to finish',
+  'Kanal seit {0} s belegt – sende trotzdem': 'Channel busy for {0} s – sending anyway',
+  'Kanal belegt – {0} wird gleich wiederholt': 'Channel busy – {0} will be repeated shortly',
+  'volle Leistung für die Datei': 'full power for the file',
+  'kündige die Datei an …': 'announcing the file …',
+  'Datei {0}: Ankündigung {1}/3': 'File {0}: announcement {1}/3',
+  'Datei: volle erlaubte Leistung, {0} dBm': 'File: full permitted power, {0} dBm',
+  'Datei fertig: zurück auf {0} dBm': 'File done: back to {0} dBm',
+  'Leistung umstellen fehlgeschlagen': 'Changing the power failed',
+  'Leistung zurück': 'power back',
+  'unvollständig bei {0} – es wird nicht mehr besser, Übertragung beendet':
+      'incomplete at {0} – no more progress, transfer stopped',
+  'Runde {0}: {1} fehlende Teile werden nachgesendet': 'Round {0}: resending {1} missing parts',
+  'vollständig empfangen von {0}': 'received completely by {0}',
+  'vollständig bei {0}, unvollständig bei {1}': 'complete at {0}, incomplete at {1}',
+  '{0} kündigt an: {1} ({2} KB, {3} Teile, ca. {4} s)': '{0} announces: {1} ({2} KB, {3} parts, about {4} s)',
+  '{0} kündigt eine Datei an – eigene Sendungen warten': '{0} announces a file – own transmissions are held back',
+  '{0} von {1} Teilen – der Sender antwortet nicht mehr': '{0} of {1} parts – the sender no longer answers',
+  'Datei vollständig – bestätigt': 'File complete – confirmed',
 };

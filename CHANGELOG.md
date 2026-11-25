@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.7.5
+
+- App: safer file and picture transfer over LR radio, node to node
+  - The sender announces a file three times first (name, size, number of parts, airtime) and sends it
+    with the highest permitted power for the frequency; afterwards the power goes back to the setting.
+    Other nodes that hear the announcement hold back their own transmissions on that channel (beacons,
+    messages) until the transfer is over
+  - The sender keeps resending missing parts until every receiver reports the file complete. It only
+    gives up when several rounds in a row bring no progress or nobody answers any more. Receivers keep
+    asking for missing parts when nothing arrives, also if they heard only the announcement. Reports
+    now carry the total number of missing parts (older versions read them as before)
+  - Before every file part the node measures the signal level and waits while someone else is
+    transmitting loudly on the frequency – also non-LoRa transmitters such as remote keys or FM
+    voice, which the LoRa channel check (CAD) does not see. Parts that hit a busy channel are repeated
+    later instead of being lost
+  - Both can be switched under Settings → LR radio 70 cm ("Announce files and send them loud", "Wait
+    for a free channel when sending files"), both on by default
+
 ## 1.7.4
 
 - ESP32 firmware 1.2.2: new sub-GHz PA settings. 16–22 dBm use Semtech's recommended values (LR20xx

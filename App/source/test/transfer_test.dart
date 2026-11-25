@@ -73,6 +73,55 @@ void main() {
     expect(chunks.length, lessThan(FileChunk.split(data, 'image/jpeg', 'bild.jpg', 7).length));
   });
 
+  test('Ankündigung einer Datei', () {
+    final a = FileAnnounce(0xCAFE0001, 129025, 717, 412, 'image/jpeg', 'foto_mit_einem_recht_langen_namen.jpg');
+    final pkt = LrPacket.build(LrType.fileAnnounce, 1, 2, 'DL5RAV-12345', '', a.build());
+    expect(pkt.length, lessThanOrEqualTo(255));
+    final b = FileAnnounce.parse(LrPacket.parse(pkt)!.body)!;
+    expect([b.xfer, b.size, b.count, b.airtimeS, b.mime, b.name],
+        [0xCAFE0001, 129025, 717, 412, 'image/jpeg', 'foto_mit_einem_recht_langen_namen.jpg']);
+    expect(FileAnnounce.parse(Uint8List.fromList([1, 2, 3])), isNull);
+  });
+
+  test('Rückmeldung nennt die Gesamtzahl fehlender Teile, ältere Form bleibt lesbar', () {
+    final many = [for (var i = 0; i < 300; i++) i * 2];
+    final a = FileAck.parse(FileAck.build(9, false, many))!;
+    expect(a.missing.length, LrFileProto.maxMissingPerAck);
+    expect(a.total, 300);
+    // ältere App-Version: ohne angehängte Gesamtzahl
+    final old = Uint8List.fromList([9, 0, 0, 0, 0, 2, 1, 0, 5, 0]);
+    final o = FileAck.parse(old)!;
+    expect(o.missing, [1, 5]);
+    expect(o.total, 2);
+    final pkt = LrPacket.build(LrType.fileAck, 1, 2, 'DL5RAV-12345', '', FileAck.build(9, false, many));
+    expect(pkt.length, lessThanOrEqualTo(255));
+  });
+
+  test('Nachsenden: weiter, solange es besser wird', () {
+    final p = ResendPolicy(maxStall: 3);
+    expect(p.next(300), isTrue);
+    expect(p.next(210), isTrue);
+    expect(p.next(120), isTrue);
+    expect(p.next(120), isTrue); // einmal gleich: noch weiter
+    expect(p.next(130), isTrue);
+    expect(p.next(125), isFalse); // dreimal hintereinander nicht besser
+    p.reset();
+    expect(p.next(5), isTrue);
+    expect(p.next(0), isFalse); // nichts fehlt mehr
+  });
+
+  test('Kanal frei/belegt nach Grundrauschen', () {
+    final w = ChannelWatch();
+    expect(w.busy(-80), isTrue); // ohne Vorwissen: sehr starkes Signal = belegt
+    for (final v in [-118.0, -117.0, -119.0, -116.0, -118.0]) {
+      expect(w.busy(v), isFalse);
+    }
+    expect(w.floor, closeTo(-118, 1.5));
+    expect(w.busy(-110), isFalse); // 8 dB über dem Rauschen: noch frei
+    expect(w.busy(-95), isTrue); // anderer Sender
+    expect(w.floor, lessThan(-114)); // belegte Werte verändern das Rauschen nicht
+  });
+
   test('Versionen vergleichen', () {
     expect(Updater.compare('v1.6.0', '1.5.0'), greaterThan(0));
     expect(Updater.compare('1.5.0', '1.5.0'), 0);
