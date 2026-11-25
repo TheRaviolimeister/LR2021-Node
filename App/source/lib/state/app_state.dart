@@ -61,6 +61,7 @@ class ModemSlot {
   Timer? _quietTimer;
   final ChannelWatch watch = ChannelWatch(); // Grundrauschen, um laute Fremdsender zu erkennen
   LoraCfg? applied; // zuletzt eingestellte LoRa-Werte (bekommt das Postfach der Node)
+  bool applying = false; // wird gerade eingestellt: Sendewarteschlange wartet
 
   bool get connected => client != null && !client!.isClosed;
   String get band => role == 'A' ? tr('HF 868') : tr('LF 433');
@@ -464,7 +465,10 @@ class NodeApp extends ChangeNotifier {
     s._reconnect?.cancel();
     s._reconnect = Timer(const Duration(seconds: 5), () async {
       if (s.connected || s.connecting || s.manualOff) return;
-      if (s.kind == TransportKind.usb || s.kind == TransportKind.node || s.kind == TransportKind.bluetooth) {
+      final o = s == a ? b : a;
+      if (viaNode(s.kind) && o.kind == s.kind && o.port != null) {
+        s.port = o.port; // über die Node: dieselbe Verbindung wie das andere Modem
+      } else if (s.kind == TransportKind.usb || s.kind == TransportKind.node || s.kind == TransportKind.bluetooth) {
         await refreshPorts(s);
         final p = s.ports.where((x) => x.id == _lastPort(s)).firstOrNull;
         if (p == null) {
@@ -480,10 +484,11 @@ class NodeApp extends ChangeNotifier {
 
   Future<void> connect(ModemSlot s) async {
     if (s.connecting) return;
+    // sofort sperren (vor dem ersten await): sonst startet ein zweiter Aufruf parallel und schließt den Kanal des ersten
+    s.connecting = true;
     s.manualOff = false;
     s._reconnect?.cancel();
     await disconnect(s, quiet: true);
-    s.connecting = true;
     s.error = null;
     s.status = tr('verbinde …');
     notifyListeners();
@@ -556,6 +561,8 @@ class NodeApp extends ChangeNotifier {
       await s.client?.close();
       await s._sub?.cancel();
       s.client = null;
+      // über die Node: das andere Modem ist evtl. schon verbunden – gleich noch einmal versuchen
+      if (viaNode(s.kind)) _scheduleReconnect(s);
     } finally {
       s.connecting = false;
       notifyListeners();
@@ -797,6 +804,11 @@ class NodeApp extends ChangeNotifier {
     s.on24 = false;
     s.loud = false;
     s._back24?.cancel();
+    s.applying = true; // solange nichts senden (sonst „beschäftigt“, und nie auf der Kalibrier-Hilfsfrequenz)
+    // ein gerade laufendes Paket erst fertig werden lassen
+    for (var i = 0; i < 40 && s.transmitting; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    }
     try {
       s.status = tr('stelle ein …');
       notifyListeners();
@@ -812,7 +824,16 @@ class NodeApp extends ChangeNotifier {
           await c.setLora(shifted);
         } catch (_) {}
       }
-      await c.setLora(cfg);
+      // „beschäftigt“ (sendet gerade, z. B. ein Paket der Node): kurz warten und noch einmal
+      for (var i = 0;; i++) {
+        try {
+          await c.setLora(cfg);
+          break;
+        } on ModemError catch (e) {
+          if (e.status != -4 || i >= 10) rethrow;
+          await Future<void>.delayed(const Duration(milliseconds: 700));
+        }
+      }
       await c.rxStart();
       s.config = await c.config();
       s.applied = cfg.copy();
@@ -825,6 +846,7 @@ class NodeApp extends ChangeNotifier {
       if (m == RadioMode.meshtastic) {
         Timer(const Duration(seconds: 2), () => sendNodeInfo(wantResponse: true));
       }
+      s.error = null;
       notifyListeners();
       return null;
     } catch (e) {
@@ -833,6 +855,9 @@ class NodeApp extends ChangeNotifier {
       _log(s.role, LogKind.err, tr('Einstellen fehlgeschlagen'), '$e');
       notifyListeners();
       return '$e';
+    } finally {
+      s.applying = false;
+      _pump(s);
     }
   }
 
@@ -991,8 +1016,9 @@ class NodeApp extends ChangeNotifier {
     s._txRunning = true;
     try {
       while (s._queue.isNotEmpty && s.connected) {
-        // die Node sucht gerade auf diesem Modul nach einer Frequenz: nichts senden
+        // die Node sucht gerade auf diesem Modul nach einer Frequenz, oder es wird gerade eingestellt: nichts senden
         if (scanRunning && scanJob?['role'] == s.role) break;
+        if (s.applying && s._queue.first.action == null) break;
         var idx = 0;
         if (_quiet(s)) {
           // fremde Dateiübertragung: nur Dateipakete und Umschaltungen, der Rest wartet

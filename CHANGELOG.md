@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.7.7
+
+- App: connecting over the node, ESP32 B was started twice at the same time (once automatically with A,
+  once by "Connect node"); the second attempt closed the channel of the first and both failed with
+  "Modem does not answer". Fixed, and a failed connection over the node is retried by itself
+- App: while a modem is being configured nothing is sent, and "busy" (a packet still on air) is retried –
+  before, ESP32 A could stay on the calibration frequency 30 MHz above the channel
+
 ## 1.7.6
 
 - App: Bluetooth to the node asks for the Android permission "Nearby devices" (scan and connect) before
